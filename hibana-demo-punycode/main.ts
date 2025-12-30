@@ -19,10 +19,17 @@ document.body.appendChild(renderer.domElement);
 
 // Animation state
 let animationStarted = false;
+let fullscreenProgress = 0;
 let typingProgress = 0;
 let zoomProgress = 0;
 const targetUrl = 'tiéuntigre.fr';
 let currentDisplayedUrl = '';
+
+// Camera positions for fullscreen effect
+// At z=5, visible height = 2 * 5 * tan(30°) = 5.77, browser (4.5) looks windowed
+// At z=3.9, visible height = 4.5, browser fills the screen
+const initialCameraZ = 5;
+const fullscreenCameraZ = 3.9;
 
 // Create browser frame using canvas texture
 function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
@@ -284,10 +291,14 @@ function easeInOutCubic(t: number): number {
 }
 
 // Animation timing
+const fullscreenDuration = 800; // 0.8 seconds for fullscreen animation
+const fullscreenDelay = 200; // Small delay before fullscreen starts
 const typingDuration = 2000; // 2 seconds for typing
-const typingDelay = 500; // Initial delay
+const typingDelay = 300; // Delay after fullscreen before typing
 const zoomDelay = 500; // Delay before zoom
 const zoomDuration = 2500; // 2.5 seconds for zoom
+const zoomPauseDuration = 2000; // 2 seconds pause after zoom
+const dezoomDuration = 2000; // 2 seconds for dezoom
 
 let animationStartTime = 0;
 
@@ -297,9 +308,29 @@ function animate(): void {
   if (animationStarted) {
     const elapsed = Date.now() - animationStartTime;
 
-    // Typing animation
-    if (elapsed > typingDelay && elapsed < typingDelay + typingDuration) {
-      const typingElapsed = elapsed - typingDelay;
+    // Fullscreen animation (move camera closer to fill screen)
+    const fullscreenStartTime = fullscreenDelay;
+    const fullscreenEndTime = fullscreenStartTime + fullscreenDuration;
+
+    if (elapsed > fullscreenStartTime && elapsed < fullscreenEndTime) {
+      const fullscreenElapsed = elapsed - fullscreenStartTime;
+      fullscreenProgress = Math.min(fullscreenElapsed / fullscreenDuration, 1);
+      const easedFullscreen = easeInOutCubic(fullscreenProgress);
+
+      // Move camera from initial position to fullscreen position
+      camera.position.z = initialCameraZ + (fullscreenCameraZ - initialCameraZ) * easedFullscreen;
+    } else if (elapsed >= fullscreenEndTime && fullscreenProgress < 1) {
+      // Ensure we reach fullscreen position
+      fullscreenProgress = 1;
+      camera.position.z = fullscreenCameraZ;
+    }
+
+    // Typing animation (starts after fullscreen completes)
+    const typingStartTime = fullscreenEndTime + typingDelay;
+    const typingEndTime = typingStartTime + typingDuration;
+
+    if (elapsed > typingStartTime && elapsed < typingEndTime) {
+      const typingElapsed = elapsed - typingStartTime;
       typingProgress = Math.min(typingElapsed / typingDuration, 1);
       const easedProgress = easeOutCubic(typingProgress);
       const charsToShow = Math.floor(easedProgress * targetUrl.length);
@@ -308,37 +339,53 @@ function animate(): void {
         currentDisplayedUrl = targetUrl.substring(0, charsToShow);
         updateBrowserTexture();
       }
-    } else if (elapsed >= typingDelay + typingDuration && currentDisplayedUrl !== targetUrl) {
+    } else if (elapsed >= typingEndTime && currentDisplayedUrl !== targetUrl) {
       currentDisplayedUrl = targetUrl;
       updateBrowserTexture();
     }
 
-    // Zoom animation
-    const zoomStartTime = typingDelay + typingDuration + zoomDelay;
-    if (elapsed > zoomStartTime) {
+    // Zoom animation (starts after typing completes)
+    const zoomStartTime = typingEndTime + zoomDelay;
+    const zoomEndTime = zoomStartTime + zoomDuration;
+
+    // Zoom target positions
+    const zoomEndZ = 1.5;
+    const zoomEndY = 1.8;
+    const zoomEndX = -2.2;
+
+    if (elapsed > zoomStartTime && elapsed < zoomEndTime) {
       const zoomElapsed = elapsed - zoomStartTime;
       zoomProgress = Math.min(zoomElapsed / zoomDuration, 1);
       const easedZoom = easeInOutCubic(zoomProgress);
 
-      // Calculate target position (URL bar area)
-      // URL text is at canvas x=240 on 1920px width, y~110 on 1080px height
-      // Plane is 8 units wide (-4 to 4) and 4.5 units tall (2.25 to -2.25)
-      // URL position in world coords: x = -4 + (240/1920)*8 = -3, y = 2.25 - (110/1080)*4.5 = 1.8
-      const startZ = 5;
-      const endZ = 0.8;
-      const startY = 0;
-      const endY = 1.75; // Move up to focus on address bar
-      const startX = 0;
-      const endX = -2.5; // Move left to center on URL text
-
-      camera.position.z = startZ + (endZ - startZ) * easedZoom;
-      camera.position.y = startY + (endY - startY) * easedZoom;
-      camera.position.x = startX + (endX - startX) * easedZoom;
+      camera.position.z = fullscreenCameraZ + (zoomEndZ - fullscreenCameraZ) * easedZoom;
+      camera.position.y = 0 + (zoomEndY - 0) * easedZoom;
+      camera.position.x = 0 + (zoomEndX - 0) * easedZoom;
 
       // Keep looking at the URL area
-      const lookAtY = startY + (endY - startY) * easedZoom;
-      const lookAtX = startX + (endX - startX) * easedZoom;
-      camera.lookAt(lookAtX, lookAtY, 0);
+      camera.lookAt(zoomEndX * easedZoom, zoomEndY * easedZoom, 0);
+    } else if (elapsed >= zoomEndTime && elapsed < zoomEndTime + zoomPauseDuration) {
+      // Pause at zoomed position
+      camera.position.z = zoomEndZ;
+      camera.position.y = zoomEndY;
+      camera.position.x = zoomEndX;
+      camera.lookAt(zoomEndX, zoomEndY, 0);
+    }
+
+    // Dezoom animation (starts after pause)
+    const dezoomStartTime = zoomEndTime + zoomPauseDuration;
+    if (elapsed > dezoomStartTime) {
+      const dezoomElapsed = elapsed - dezoomStartTime;
+      const dezoomProgress = Math.min(dezoomElapsed / dezoomDuration, 1);
+      const easedDezoom = easeInOutCubic(dezoomProgress);
+
+      // Animate from zoomed position back to fullscreen position
+      camera.position.z = zoomEndZ + (fullscreenCameraZ - zoomEndZ) * easedDezoom;
+      camera.position.y = zoomEndY + (0 - zoomEndY) * easedDezoom;
+      camera.position.x = zoomEndX + (0 - zoomEndX) * easedDezoom;
+
+      // Look at center as we dezoom
+      camera.lookAt(zoomEndX * (1 - easedDezoom), zoomEndY * (1 - easedDezoom), 0);
     }
   }
 
