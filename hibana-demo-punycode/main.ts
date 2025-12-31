@@ -1,21 +1,34 @@
-import * as THREE from 'three';
+import {
+  Engine,
+  Scene,
+  FreeCamera,
+  Vector3,
+  Color3,
+  Color4,
+  MeshBuilder,
+  StandardMaterial,
+  DynamicTexture,
+  Mesh,
+} from '@babylonjs/core';
 
-// Scene setup
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a2e);
+// Get the canvas element
+const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
 
-const camera = new THREE.PerspectiveCamera(
-  60,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
-camera.position.z = 5;
+// Create the Babylon.js engine
+const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-document.body.appendChild(renderer.domElement);
+// Create the scene
+const scene = new Scene(engine);
+scene.clearColor = new Color4(0.102, 0.102, 0.18, 1); // #1a1a2e
+
+// Camera positions for fullscreen effect
+const initialCameraZ = 5;
+const fullscreenCameraZ = 3.9;
+
+// Create camera - positive Z looking at origin
+const camera = new FreeCamera('camera', new Vector3(0, 0, initialCameraZ), scene);
+camera.setTarget(Vector3.Zero());
+camera.fov = (60 * Math.PI) / 180; // 60 degrees in radians
 
 // Animation state
 let animationStarted = false;
@@ -25,34 +38,28 @@ let zoomProgress = 0;
 const targetUrl = 'tiéuntigre.fr';
 let currentDisplayedUrl = '';
 
-// Camera positions for fullscreen effect
-// At z=5, visible height = 2 * 5 * tan(30°) = 5.77, browser (4.5) looks windowed
-// At z=3.9, visible height = 4.5, browser fills the screen
-const initialCameraZ = 5;
-const fullscreenCameraZ = 3.9;
-
 // Create browser frame using canvas texture
-function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
-  canvas.width = 1920;
-  canvas.height = 1080;
+function createBrowserCanvas(urlText: string = ''): HTMLCanvasElement {
+  const canvasEl = document.createElement('canvas');
+  const ctx = canvasEl.getContext('2d')!;
+  canvasEl.width = 1920;
+  canvasEl.height = 1080;
 
   // Browser window background
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
-  // Chrome title bar (dark gray)
-  const titleBarHeight = 80;
-  ctx.fillStyle = '#3c3c3c';
-  ctx.fillRect(0, 0, canvas.width, titleBarHeight);
+  // Chrome title bar (gray)
+  const titleBarHeight = 50;
+  ctx.fillStyle = '#5a5a5a';
+  ctx.fillRect(0, 0, canvasEl.width, titleBarHeight);
 
   // Tab
   ctx.fillStyle = '#5a5a5a';
   ctx.beginPath();
   ctx.moveTo(20, titleBarHeight);
-  ctx.lineTo(40, 15);
-  ctx.lineTo(280, 15);
+  ctx.lineTo(40, 5);
+  ctx.lineTo(280, 5);
   ctx.lineTo(300, titleBarHeight);
   ctx.closePath();
   ctx.fill();
@@ -61,8 +68,8 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
   ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.moveTo(25, titleBarHeight);
-  ctx.lineTo(45, 20);
-  ctx.lineTo(275, 20);
+  ctx.lineTo(45, 10);
+  ctx.lineTo(275, 10);
   ctx.lineTo(295, titleBarHeight);
   ctx.closePath();
   ctx.fill();
@@ -70,11 +77,11 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
   // Tab title
   ctx.fillStyle = '#333';
   ctx.font = '24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-  ctx.fillText('New Tab', 80, 55);
+  ctx.fillText('New Tab', 80, 38);
 
   // Window controls (right side)
-  const controlsY = 35;
-  const controlsStartX = canvas.width - 150;
+  const controlsY = 25;
+  const controlsStartX = canvasEl.width - 150;
 
   // Minimize
   ctx.fillStyle = '#888';
@@ -97,7 +104,7 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
   const addressBarY = titleBarHeight;
   const addressBarHeight = 60;
   ctx.fillStyle = '#f1f3f4';
-  ctx.fillRect(0, addressBarY, canvas.width, addressBarHeight);
+  ctx.fillRect(0, addressBarY, canvasEl.width, addressBarHeight);
 
   // Navigation buttons
   const navY = addressBarY + 20;
@@ -125,7 +132,7 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
   // Address bar (rounded rectangle)
   const urlBarX = 180;
   const urlBarY = addressBarY + 10;
-  const urlBarWidth = canvas.width - 400;
+  const urlBarWidth = canvasEl.width - 400;
   const urlBarHeight = 40;
   const radius = 20;
 
@@ -166,7 +173,7 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
 
   // Browser icons on the right
   ctx.fillStyle = '#5f6368';
-  const iconX = canvas.width - 180;
+  const iconX = canvasEl.width - 180;
 
   // Extensions icon
   ctx.beginPath();
@@ -194,7 +201,7 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
   // Bookmarks bar
   const bookmarksY = addressBarY + addressBarHeight;
   ctx.fillStyle = '#f8f9fa';
-  ctx.fillRect(0, bookmarksY, canvas.width, 35);
+  ctx.fillRect(0, bookmarksY, canvasEl.width, 35);
 
   ctx.fillStyle = '#5f6368';
   ctx.font = '18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
@@ -202,27 +209,27 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
 
   // Main content area (white)
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, bookmarksY + 35, canvas.width, canvas.height - bookmarksY - 35);
+  ctx.fillRect(0, bookmarksY + 35, canvasEl.width, canvasEl.height - bookmarksY - 35);
 
   // Google logo placeholder in center
-  const centerY = (canvas.height + bookmarksY + 35) / 2 - 50;
+  const centerY = (canvasEl.height + bookmarksY + 35) / 2 - 50;
   ctx.fillStyle = '#4285f4';
   ctx.font = 'bold 120px "Product Sans", Arial, sans-serif';
-  ctx.fillText('G', canvas.width / 2 - 180, centerY);
+  ctx.fillText('G', canvasEl.width / 2 - 210, centerY);
   ctx.fillStyle = '#ea4335';
-  ctx.fillText('o', canvas.width / 2 - 100, centerY);
+  ctx.fillText('o', canvasEl.width / 2 - 115, centerY);
   ctx.fillStyle = '#fbbc05';
-  ctx.fillText('o', canvas.width / 2 - 30, centerY);
+  ctx.fillText('o', canvasEl.width / 2 - 45, centerY);
   ctx.fillStyle = '#4285f4';
-  ctx.fillText('g', canvas.width / 2 + 40, centerY);
+  ctx.fillText('g', canvasEl.width / 2 + 25, centerY);
   ctx.fillStyle = '#34a853';
-  ctx.fillText('l', canvas.width / 2 + 110, centerY);
+  ctx.fillText('l', canvasEl.width / 2 + 95, centerY);
   ctx.fillStyle = '#ea4335';
-  ctx.fillText('e', canvas.width / 2 + 140, centerY);
+  ctx.fillText('e', canvasEl.width / 2 + 125, centerY);
 
   // Search bar
   const searchBarWidth = 600;
-  const searchBarX = (canvas.width - searchBarWidth) / 2;
+  const searchBarX = (canvasEl.width - searchBarWidth) / 2;
   const searchBarY = centerY + 50;
 
   ctx.strokeStyle = '#dfe1e5';
@@ -240,45 +247,44 @@ function createBrowserTexture(urlText: string = ''): HTMLCanvasElement {
   ctx.lineTo(searchBarX + 45, searchBarY + 37);
   ctx.stroke();
 
-  return canvas;
+  return canvasEl;
 }
 
 // Create browser mesh
-let browserTexture: THREE.CanvasTexture;
-let browserMaterial: THREE.MeshBasicMaterial;
-let browserMesh: THREE.Mesh;
+let browserTexture: DynamicTexture;
+let browserMaterial: StandardMaterial;
+let browserMesh: Mesh;
 
 function createBrowserMesh(): void {
-  const canvas = createBrowserTexture(currentDisplayedUrl);
-  browserTexture = new THREE.CanvasTexture(canvas);
-  browserTexture.minFilter = THREE.LinearFilter;
-  browserTexture.magFilter = THREE.LinearFilter;
+  // Create dynamic texture from canvas
+  browserTexture = new DynamicTexture('browserTexture', { width: 1920, height: 1080 }, scene, true);
+  const textureContext = browserTexture.getContext();
+  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl);
+  textureContext.drawImage(sourceCanvas, 0, 0);
+  browserTexture.update();
 
-  browserMaterial = new THREE.MeshBasicMaterial({
-    map: browserTexture,
-    side: THREE.DoubleSide,
-  });
+  // Create material
+  browserMaterial = new StandardMaterial('browserMaterial', scene);
+  browserMaterial.diffuseTexture = browserTexture;
+  browserMaterial.emissiveTexture = browserTexture; // Make it visible without lights
+  browserMaterial.backFaceCulling = false;
+  browserMaterial.disableLighting = true;
 
-  const geometry = new THREE.PlaneGeometry(8, 4.5);
-  browserMesh = new THREE.Mesh(geometry, browserMaterial);
-  scene.add(browserMesh);
-
-  // Add subtle shadow/depth
-  const shadowGeometry = new THREE.PlaneGeometry(8.2, 4.7);
-  const shadowMaterial = new THREE.MeshBasicMaterial({
-    color: 0x000000,
-    transparent: true,
-    opacity: 0.3,
-  });
-  const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial);
-  shadowMesh.position.z = -0.1;
-  scene.add(shadowMesh);
+  // Create browser plane - sideOrientation DOUBLESIDE to be visible from both sides
+  browserMesh = MeshBuilder.CreatePlane('browser', {
+    width: 8,
+    height: 4.5,
+    sideOrientation: Mesh.DOUBLESIDE
+  }, scene);
+  browserMesh.material = browserMaterial;
+  browserMesh.scaling.x = -1; // Flip horizontally
 }
 
 function updateBrowserTexture(): void {
-  const canvas = createBrowserTexture(currentDisplayedUrl);
-  browserTexture.image = canvas;
-  browserTexture.needsUpdate = true;
+  const textureContext = browserTexture.getContext();
+  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl);
+  textureContext.drawImage(sourceCanvas, 0, 0);
+  browserTexture.update();
 }
 
 // Easing functions
@@ -291,20 +297,19 @@ function easeInOutCubic(t: number): number {
 }
 
 // Animation timing
-const fullscreenDuration = 800; // 0.8 seconds for fullscreen animation
-const fullscreenDelay = 200; // Small delay before fullscreen starts
-const typingDuration = 2000; // 2 seconds for typing
-const typingDelay = 300; // Delay after fullscreen before typing
-const zoomDelay = 500; // Delay before zoom
-const zoomDuration = 2500; // 2.5 seconds for zoom
-const zoomPauseDuration = 2000; // 2 seconds pause after zoom
-const dezoomDuration = 2000; // 2 seconds for dezoom
+const fullscreenDuration = 800;
+const fullscreenDelay = 200;
+const typingDuration = 2000;
+const typingDelay = 300;
+const zoomDelay = 500;
+const zoomDuration = 2500;
+const zoomPauseDuration = 2000;
+const dezoomDuration = 2000;
 
 let animationStartTime = 0;
 
-function animate(): void {
-  requestAnimationFrame(animate);
-
+// Animation loop
+scene.registerBeforeRender(() => {
   if (animationStarted) {
     const elapsed = Date.now() - animationStartTime;
 
@@ -317,15 +322,14 @@ function animate(): void {
       fullscreenProgress = Math.min(fullscreenElapsed / fullscreenDuration, 1);
       const easedFullscreen = easeInOutCubic(fullscreenProgress);
 
-      // Move camera from initial position to fullscreen position
+      // Move camera closer to simulate fullscreen
       camera.position.z = initialCameraZ + (fullscreenCameraZ - initialCameraZ) * easedFullscreen;
     } else if (elapsed >= fullscreenEndTime && fullscreenProgress < 1) {
-      // Ensure we reach fullscreen position
       fullscreenProgress = 1;
       camera.position.z = fullscreenCameraZ;
     }
 
-    // Typing animation (starts after fullscreen completes)
+    // Typing animation
     const typingStartTime = fullscreenEndTime + typingDelay;
     const typingEndTime = typingStartTime + typingDuration;
 
@@ -344,14 +348,14 @@ function animate(): void {
       updateBrowserTexture();
     }
 
-    // Zoom animation (starts after typing completes)
+    // Zoom animation (camera moves to focus on URL bar)
     const zoomStartTime = typingEndTime + zoomDelay;
     const zoomEndTime = zoomStartTime + zoomDuration;
 
-    // Zoom target positions
+    // Zoom target positions (X is positive because browser is flipped)
     const zoomEndZ = 1.5;
     const zoomEndY = 1.8;
-    const zoomEndX = -2.2;
+    const zoomEndX = 2.2;
 
     if (elapsed > zoomStartTime && elapsed < zoomEndTime) {
       const zoomElapsed = elapsed - zoomStartTime;
@@ -359,70 +363,56 @@ function animate(): void {
       const easedZoom = easeInOutCubic(zoomProgress);
 
       camera.position.z = fullscreenCameraZ + (zoomEndZ - fullscreenCameraZ) * easedZoom;
-      camera.position.y = 0 + (zoomEndY - 0) * easedZoom;
-      camera.position.x = 0 + (zoomEndX - 0) * easedZoom;
+      camera.position.y = 0 + zoomEndY * easedZoom;
+      camera.position.x = 0 + zoomEndX * easedZoom;
 
-      // Keep looking at the URL area
-      camera.lookAt(zoomEndX * easedZoom, zoomEndY * easedZoom, 0);
+      camera.setTarget(new Vector3(zoomEndX * easedZoom, zoomEndY * easedZoom, 0));
     } else if (elapsed >= zoomEndTime && elapsed < zoomEndTime + zoomPauseDuration) {
-      // Pause at zoomed position
       camera.position.z = zoomEndZ;
       camera.position.y = zoomEndY;
       camera.position.x = zoomEndX;
-      camera.lookAt(zoomEndX, zoomEndY, 0);
+      camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
     }
 
-    // Dezoom animation (starts after pause)
+    // Dezoom animation
     const dezoomStartTime = zoomEndTime + zoomPauseDuration;
     if (elapsed > dezoomStartTime) {
       const dezoomElapsed = elapsed - dezoomStartTime;
       const dezoomProgress = Math.min(dezoomElapsed / dezoomDuration, 1);
       const easedDezoom = easeInOutCubic(dezoomProgress);
 
-      // Animate from zoomed position back to fullscreen position
       camera.position.z = zoomEndZ + (fullscreenCameraZ - zoomEndZ) * easedDezoom;
-      camera.position.y = zoomEndY + (0 - zoomEndY) * easedDezoom;
-      camera.position.x = zoomEndX + (0 - zoomEndX) * easedDezoom;
+      camera.position.y = zoomEndY * (1 - easedDezoom);
+      camera.position.x = zoomEndX * (1 - easedDezoom);
 
-      // Look at center as we dezoom
-      camera.lookAt(zoomEndX * (1 - easedDezoom), zoomEndY * (1 - easedDezoom), 0);
+      camera.setTarget(new Vector3(
+        zoomEndX * (1 - easedDezoom),
+        zoomEndY * (1 - easedDezoom),
+        0
+      ));
     }
   }
-
-  renderer.render(scene, camera);
-}
+});
 
 // Handle window resize
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  engine.resize();
 });
 
-// Start animation on click
-window.addEventListener('click', () => {
-  if (!animationStarted) {
-    animationStarted = true;
-    animationStartTime = Date.now();
-    const infoElement = document.getElementById('info');
-    if (infoElement) {
-      infoElement.style.opacity = '0';
-    }
+// Auto-start animation after 1 second
+setTimeout(() => {
+  animationStarted = true;
+  animationStartTime = Date.now();
+  const infoElement = document.getElementById('info');
+  if (infoElement) {
+    infoElement.style.opacity = '0';
   }
-});
-
-// Also start on key press
-window.addEventListener('keydown', () => {
-  if (!animationStarted) {
-    animationStarted = true;
-    animationStartTime = Date.now();
-    const infoElement = document.getElementById('info');
-    if (infoElement) {
-      infoElement.style.opacity = '0';
-    }
-  }
-});
+}, 1000);
 
 // Initialize
 createBrowserMesh();
-animate();
+
+// Run the render loop
+engine.runRenderLoop(() => {
+  scene.render();
+});
