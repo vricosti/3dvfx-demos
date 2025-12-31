@@ -3,7 +3,6 @@ import {
   Scene,
   FreeCamera,
   Vector3,
-  Color3,
   Color4,
   MeshBuilder,
   StandardMaterial,
@@ -35,11 +34,23 @@ let animationStarted = false;
 let fullscreenProgress = 0;
 let typingProgress = 0;
 let zoomProgress = 0;
-const targetUrl = 'tiéuntigre.fr';
+let eraseProgress = 0;
+let typing2Progress = 0;
+let comparisonProgress = 0;
+
+// First URL: Chinese characters
+const firstUrl = '例子.测试';
+// Second URL: Cyrillic homograph (а, р, р, ӏ, е are Cyrillic, looks like "apple")
+const secondUrl = 'аррӏе.com';
+// The Cyrillic "l" character (palochka)
+const cyrillicL = 'ӏ';
+const latinL = 'l';
 let currentDisplayedUrl = '';
+let currentPhase: 'typing1' | 'pause1' | 'erasing' | 'typing2' | 'pause2' | 'comparison' | 'done' = 'typing1';
+let comparisonAnimProgress = 0; // 0 to 1 for the letter moving out animation
 
 // Create browser frame using canvas texture
-function createBrowserCanvas(urlText: string = ''): HTMLCanvasElement {
+function createBrowserCanvas(urlText: string = '', showComparison: boolean = false, animProgress: number = 0): HTMLCanvasElement {
   const canvasEl = document.createElement('canvas');
   const ctx = canvasEl.getContext('2d')!;
   canvasEl.width = 1920;
@@ -162,10 +173,33 @@ function createBrowserCanvas(urlText: string = ''): HTMLCanvasElement {
   ctx.font = '26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
   const textX = 240;
   const textY = urlBarY + 30;
-  ctx.fillText(urlText, textX, textY);
 
-  // Blinking cursor (if typing)
-  if (urlText.length < targetUrl.length && animationStarted) {
+  // Store values for comparison drawing later (after all UI elements)
+  let comparisonData: { beforeWidth: number; lWidth: number; animatedLX: number } | null = null;
+
+  if (showComparison && urlText === secondUrl) {
+    // In comparison mode, draw URL with gap (letter will be drawn later on top)
+    const beforeL = urlText.substring(0, 3); // "арр"
+    const afterL = urlText.substring(4); // "е.com"
+
+    const beforeWidth = ctx.measureText(beforeL).width;
+    const lWidth = ctx.measureText(cyrillicL).width;
+
+    // Draw text before the L
+    ctx.fillText(beforeL, textX, textY);
+
+    // Draw text after the L (with gap)
+    ctx.fillText(afterL, textX + beforeWidth + lWidth, textY);
+
+    // Store for later drawing
+    comparisonData = { beforeWidth, lWidth, animatedLX: textX + beforeWidth };
+  } else {
+    // Normal mode: just draw the URL
+    ctx.fillText(urlText, textX, textY);
+  }
+
+  // Blinking cursor (if typing or erasing)
+  if (animationStarted && currentPhase !== 'done' && currentPhase !== 'pause1' && currentPhase !== 'pause2' && currentPhase !== 'comparison') {
     const textWidth = ctx.measureText(urlText).width;
     ctx.fillStyle = '#202124';
     ctx.fillRect(textX + textWidth + 2, urlBarY + 10, 2, 24);
@@ -247,6 +281,62 @@ function createBrowserCanvas(urlText: string = ''): HTMLCanvasElement {
   ctx.lineTo(searchBarX + 45, searchBarY + 37);
   ctx.stroke();
 
+  // Draw comparison animation ON TOP of everything else
+  if (comparisonData && showComparison) {
+    const { animatedLX } = comparisonData;
+
+    // Comparison display area (in the white content area)
+    const bookmarksEndY = titleBarHeight + addressBarHeight + 35;
+    const comparisonStartY = bookmarksEndY + 80;
+    const letterMoveDistance = comparisonStartY - textY;
+    const currentLetterY = textY + letterMoveDistance * animProgress;
+
+    // Draw the animated Cyrillic L
+    ctx.fillStyle = '#e53935'; // Red for Cyrillic
+    ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+    ctx.fillText(cyrillicL, animatedLX, currentLetterY);
+
+    // Once animation is complete, show the comparison labels
+    if (animProgress >= 1) {
+      const labelX = animatedLX + 60;
+      const arrowLength = 40;
+
+      // First row: Cyrillic L with arrow and label
+      ctx.strokeStyle = '#e53935';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(animatedLX + 20, comparisonStartY - 10);
+      ctx.lineTo(animatedLX + 20 + arrowLength, comparisonStartY - 10);
+      ctx.lineTo(animatedLX + 20 + arrowLength - 8, comparisonStartY - 16);
+      ctx.moveTo(animatedLX + 20 + arrowLength, comparisonStartY - 10);
+      ctx.lineTo(animatedLX + 20 + arrowLength - 8, comparisonStartY - 4);
+      ctx.stroke();
+
+      ctx.fillStyle = '#e53935';
+      ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.fillText('ӏ cyrillique (U+04CF)', labelX + 20, comparisonStartY - 4);
+
+      // Second row: Latin L with arrow and label
+      const row2Y = comparisonStartY + 50;
+      ctx.fillStyle = '#1e88e5'; // Blue for Latin
+      ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.fillText(latinL, animatedLX, row2Y);
+
+      ctx.strokeStyle = '#1e88e5';
+      ctx.beginPath();
+      ctx.moveTo(animatedLX + 20, row2Y - 10);
+      ctx.lineTo(animatedLX + 20 + arrowLength, row2Y - 10);
+      ctx.lineTo(animatedLX + 20 + arrowLength - 8, row2Y - 16);
+      ctx.moveTo(animatedLX + 20 + arrowLength, row2Y - 10);
+      ctx.lineTo(animatedLX + 20 + arrowLength - 8, row2Y - 4);
+      ctx.stroke();
+
+      ctx.fillStyle = '#1e88e5';
+      ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+      ctx.fillText('l standard (U+006C)', labelX + 20, row2Y - 4);
+    }
+  }
+
   return canvasEl;
 }
 
@@ -280,9 +370,9 @@ function createBrowserMesh(): void {
   browserMesh.scaling.x = -1; // Flip horizontally
 }
 
-function updateBrowserTexture(): void {
+function updateBrowserTexture(showComparison: boolean = false, animProgress: number = 0): void {
   const textureContext = browserTexture.getContext();
-  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl);
+  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress);
   textureContext.drawImage(sourceCanvas, 0, 0);
   browserTexture.update();
 }
@@ -299,11 +389,16 @@ function easeInOutCubic(t: number): number {
 // Animation timing
 const fullscreenDuration = 800;
 const fullscreenDelay = 200;
-const typingDuration = 2000;
+const typing1Duration = 2500;  // Typing first URL (Chinese)
+const pause1Duration = 2000;   // Pause to show first URL
+const eraseDuration = 800;     // Erasing first URL
+const typing2Duration = 2500;  // Typing second URL (Cyrillic)
+const pause2Duration = 1000;   // Pause before comparison
+const comparisonDuration = 1000; // Letter moving out animation
+const comparisonHoldDuration = 3000; // Hold comparison display
 const typingDelay = 300;
 const zoomDelay = 500;
 const zoomDuration = 2500;
-const zoomPauseDuration = 2000;
 const dezoomDuration = 2000;
 
 let animationStartTime = 0;
@@ -329,27 +424,8 @@ scene.registerBeforeRender(() => {
       camera.position.z = fullscreenCameraZ;
     }
 
-    // Typing animation
-    const typingStartTime = fullscreenEndTime + typingDelay;
-    const typingEndTime = typingStartTime + typingDuration;
-
-    if (elapsed > typingStartTime && elapsed < typingEndTime) {
-      const typingElapsed = elapsed - typingStartTime;
-      typingProgress = Math.min(typingElapsed / typingDuration, 1);
-      const easedProgress = easeOutCubic(typingProgress);
-      const charsToShow = Math.floor(easedProgress * targetUrl.length);
-
-      if (currentDisplayedUrl.length !== charsToShow) {
-        currentDisplayedUrl = targetUrl.substring(0, charsToShow);
-        updateBrowserTexture();
-      }
-    } else if (elapsed >= typingEndTime && currentDisplayedUrl !== targetUrl) {
-      currentDisplayedUrl = targetUrl;
-      updateBrowserTexture();
-    }
-
-    // Zoom animation (camera moves to focus on URL bar)
-    const zoomStartTime = typingEndTime + zoomDelay;
+    // Zoom animation (camera moves to focus on URL bar) - starts after fullscreen
+    const zoomStartTime = fullscreenEndTime + zoomDelay;
     const zoomEndTime = zoomStartTime + zoomDuration;
 
     // Zoom target positions (X is positive because browser is flipped)
@@ -367,15 +443,107 @@ scene.registerBeforeRender(() => {
       camera.position.x = 0 + zoomEndX * easedZoom;
 
       camera.setTarget(new Vector3(zoomEndX * easedZoom, zoomEndY * easedZoom, 0));
-    } else if (elapsed >= zoomEndTime && elapsed < zoomEndTime + zoomPauseDuration) {
+    }
+
+    // Phase 1: Type first URL (Chinese characters)
+    const typing1StartTime = zoomEndTime + typingDelay;
+    const typing1EndTime = typing1StartTime + typing1Duration;
+
+    if (elapsed > typing1StartTime && elapsed < typing1EndTime) {
+      currentPhase = 'typing1';
+      const typing1Elapsed = elapsed - typing1StartTime;
+      typingProgress = Math.min(typing1Elapsed / typing1Duration, 1);
+      const easedProgress = easeOutCubic(typingProgress);
+      const charsToShow = Math.floor(easedProgress * firstUrl.length);
+
+      if (currentDisplayedUrl.length !== charsToShow) {
+        currentDisplayedUrl = firstUrl.substring(0, charsToShow);
+        updateBrowserTexture();
+      }
+    } else if (elapsed >= typing1EndTime && currentPhase === 'typing1') {
+      currentDisplayedUrl = firstUrl;
+      currentPhase = 'pause1';
+      updateBrowserTexture();
+    }
+
+    // Phase 2: Pause to show first URL
+    const pause1EndTime = typing1EndTime + pause1Duration;
+
+    // Phase 3: Erase first URL
+    const eraseStartTime = pause1EndTime;
+    const eraseEndTime = eraseStartTime + eraseDuration;
+
+    if (elapsed > eraseStartTime && elapsed < eraseEndTime) {
+      currentPhase = 'erasing';
+      const eraseElapsed = elapsed - eraseStartTime;
+      eraseProgress = Math.min(eraseElapsed / eraseDuration, 1);
+      const easedProgress = easeOutCubic(eraseProgress);
+      const charsToShow = Math.floor((1 - easedProgress) * firstUrl.length);
+
+      if (currentDisplayedUrl.length !== charsToShow) {
+        currentDisplayedUrl = firstUrl.substring(0, charsToShow);
+        updateBrowserTexture();
+      }
+    } else if (elapsed >= eraseEndTime && currentPhase === 'erasing') {
+      currentDisplayedUrl = '';
+      currentPhase = 'typing2';
+      updateBrowserTexture();
+    }
+
+    // Phase 4: Type second URL (Cyrillic homograph)
+    const typing2StartTime = eraseEndTime;
+    const typing2EndTime = typing2StartTime + typing2Duration;
+
+    if (elapsed > typing2StartTime && elapsed < typing2EndTime) {
+      currentPhase = 'typing2';
+      const typing2Elapsed = elapsed - typing2StartTime;
+      typing2Progress = Math.min(typing2Elapsed / typing2Duration, 1);
+      const easedProgress = easeOutCubic(typing2Progress);
+      const charsToShow = Math.floor(easedProgress * secondUrl.length);
+
+      if (currentDisplayedUrl.length !== charsToShow) {
+        currentDisplayedUrl = secondUrl.substring(0, charsToShow);
+        updateBrowserTexture();
+      }
+    } else if (elapsed >= typing2EndTime && currentPhase === 'typing2') {
+      currentDisplayedUrl = secondUrl;
+      currentPhase = 'pause2';
+      updateBrowserTexture();
+    }
+
+    // Phase 5: Pause before comparison
+    const pause2EndTime = typing2EndTime + pause2Duration;
+
+    // Phase 6: Comparison animation (letter moving out)
+    const comparisonStartTime = pause2EndTime;
+    const comparisonEndTime = comparisonStartTime + comparisonDuration;
+    const comparisonHoldEndTime = comparisonEndTime + comparisonHoldDuration;
+
+    if (elapsed > comparisonStartTime && elapsed < comparisonEndTime) {
+      currentPhase = 'comparison';
+      const compElapsed = elapsed - comparisonStartTime;
+      comparisonProgress = Math.min(compElapsed / comparisonDuration, 1);
+      comparisonAnimProgress = easeOutCubic(comparisonProgress);
+      updateBrowserTexture(true, comparisonAnimProgress);
+    } else if (elapsed >= comparisonEndTime && elapsed < comparisonHoldEndTime) {
+      currentPhase = 'comparison';
+      comparisonAnimProgress = 1;
+      updateBrowserTexture(true, 1);
+    } else if (elapsed >= comparisonHoldEndTime && currentPhase === 'comparison') {
+      currentPhase = 'done';
+    }
+
+    // Dezoom animation - starts after comparison hold
+    const dezoomStartTime = comparisonHoldEndTime;
+
+    // Keep camera at zoomed position until dezoom starts
+    if (elapsed >= zoomEndTime && elapsed <= dezoomStartTime) {
       camera.position.z = zoomEndZ;
       camera.position.y = zoomEndY;
       camera.position.x = zoomEndX;
       camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
     }
 
-    // Dezoom animation
-    const dezoomStartTime = zoomEndTime + zoomPauseDuration;
     if (elapsed > dezoomStartTime) {
       const dezoomElapsed = elapsed - dezoomStartTime;
       const dezoomProgress = Math.min(dezoomElapsed / dezoomDuration, 1);
