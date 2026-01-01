@@ -29,28 +29,94 @@ const camera = new FreeCamera('camera', new Vector3(0, 0, initialCameraZ), scene
 camera.setTarget(Vector3.Zero());
 camera.fov = (60 * Math.PI) / 180; // 60 degrees in radians
 
-// Animation state
-let animationStarted = false;
+// Animation steps (triggered by Space key)
+type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'returnLetters' | 'dezoom' | 'done';
+const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'returnLetters', 'dezoom', 'done'];
+let currentStepIndex = 0;
+let stepStartTime = 0;
+let stepAnimationComplete = false;
+
+// Animation progress variables
 let fullscreenProgress = 0;
 let typingProgress = 0;
 let zoomProgress = 0;
 let eraseProgress = 0;
+let emojiTypingProgress = 0;
+let emojiEraseProgress = 0;
 let typing2Progress = 0;
 let comparisonProgress = 0;
+let comparisonAnimProgress = 0;
+let returnLettersProgress = 0;
 
 // First URL: Chinese characters
 const firstUrl = '例子.测试';
-// Second URL: Cyrillic homograph (а, р, р, ӏ, е are Cyrillic, looks like "apple")
+// Second URL: Emoji in domain
+const emojiUrl = '💪.com';
+// Third URL: Cyrillic homograph (а, р, р, ӏ, е are Cyrillic, looks like "apple")
 const secondUrl = 'аррӏе.com';
-// The Cyrillic "l" character (palochka)
-const cyrillicL = 'ӏ';
-const latinL = 'l';
+
+// Cyrillic letters info for comparison animation
+const cyrillicLetters = [
+  { char: 'а', code: 'U+0430', latin: 'a' },
+  { char: 'р', code: 'U+0440', latin: 'p' },
+  { char: 'р', code: 'U+0440', latin: 'p' },
+  { char: 'ӏ', code: 'U+04CF', latin: 'l' }
+];
+
 let currentDisplayedUrl = '';
 let currentPhase: 'typing1' | 'pause1' | 'erasing' | 'typing2' | 'pause2' | 'comparison' | 'done' = 'typing1';
-let comparisonAnimProgress = 0; // 0 to 1 for the letter moving out animation
+
+// Helper to get current step
+function getCurrentStep(): AnimationStep {
+  return animationSteps[currentStepIndex];
+}
+
+// Advance to next step
+function nextStep(): void {
+  if (currentStepIndex < animationSteps.length - 1) {
+    currentStepIndex++;
+    stepStartTime = Date.now();
+    stepAnimationComplete = false;
+
+    // Reset phase-specific progress
+    const step = getCurrentStep();
+    if (step === 'typing1') {
+      currentDisplayedUrl = '';
+      currentPhase = 'typing1';
+      typingProgress = 0;
+    } else if (step === 'erasing1') {
+      currentPhase = 'erasing';
+      eraseProgress = 0;
+    } else if (step === 'typingEmoji') {
+      currentDisplayedUrl = '';
+      emojiTypingProgress = 0;
+    } else if (step === 'erasingEmoji') {
+      emojiEraseProgress = 0;
+    } else if (step === 'typing2') {
+      currentDisplayedUrl = '';
+      currentPhase = 'typing2';
+      typing2Progress = 0;
+    } else if (step === 'comparison') {
+      currentPhase = 'comparison';
+      comparisonProgress = 0;
+      comparisonAnimProgress = 0;
+    }
+
+    updateBrowserTexture();
+  }
+}
+
+// Comparison animation state
+type ComparisonState = 'none' | 'animating' | 'full' | 'returnLetters' | 'complete';
 
 // Create browser frame using canvas texture
-function createBrowserCanvas(urlText: string = '', showComparison: boolean = false, animProgress: number = 0): HTMLCanvasElement {
+function createBrowserCanvas(
+  urlText: string = '',
+  showComparison: boolean = false,
+  animProgress: number = 0,
+  comparisonState: ComparisonState = 'none',
+  reverseProgress: number = 0
+): HTMLCanvasElement {
   const canvasEl = document.createElement('canvas');
   const ctx = canvasEl.getContext('2d')!;
   canvasEl.width = 1920;
@@ -175,31 +241,38 @@ function createBrowserCanvas(urlText: string = '', showComparison: boolean = fal
   const textY = urlBarY + 30;
 
   // Store values for comparison drawing later (after all UI elements)
-  let comparisonData: { beforeWidth: number; lWidth: number; animatedLX: number } | null = null;
+  let comparisonData: { letterPositions: number[]; letterWidths: number[] } | null = null;
 
   if (showComparison && urlText === secondUrl) {
-    // In comparison mode, draw URL with gap (letter will be drawn later on top)
-    const beforeL = urlText.substring(0, 3); // "арр"
-    const afterL = urlText.substring(4); // "е.com"
+    // In comparison mode, draw URL with gaps for the 4 Cyrillic letters (а, р, р, ӏ)
+    // URL is "аррӏе.com" - first 4 chars are Cyrillic, rest is "е.com"
+    const afterCyrillic = urlText.substring(4); // "е.com"
 
-    const beforeWidth = ctx.measureText(beforeL).width;
-    const lWidth = ctx.measureText(cyrillicL).width;
+    // Calculate positions for each letter
+    const letterPositions: number[] = [];
+    const letterWidths: number[] = [];
+    let currentX = textX;
 
-    // Draw text before the L
-    ctx.fillText(beforeL, textX, textY);
+    for (let i = 0; i < 4; i++) {
+      letterPositions.push(currentX);
+      const charWidth = ctx.measureText(cyrillicLetters[i].char).width;
+      letterWidths.push(charWidth);
+      currentX += charWidth;
+    }
 
-    // Draw text after the L (with gap)
-    ctx.fillText(afterL, textX + beforeWidth + lWidth, textY);
+    // Draw the remaining text after the 4 Cyrillic letters
+    ctx.fillText(afterCyrillic, currentX, textY);
 
     // Store for later drawing
-    comparisonData = { beforeWidth, lWidth, animatedLX: textX + beforeWidth };
+    comparisonData = { letterPositions, letterWidths };
   } else {
     // Normal mode: just draw the URL
     ctx.fillText(urlText, textX, textY);
   }
 
   // Blinking cursor (if typing or erasing)
-  if (animationStarted && currentPhase !== 'done' && currentPhase !== 'pause1' && currentPhase !== 'pause2' && currentPhase !== 'comparison') {
+  const step = getCurrentStep();
+  if (step !== 'idle' && (step === 'typing1' || step === 'typing2' || step === 'typingEmoji' || step === 'erasing1' || step === 'erasingEmoji')) {
     const textWidth = ctx.measureText(urlText).width;
     ctx.fillStyle = '#202124';
     ctx.fillRect(textX + textWidth + 2, urlBarY + 10, 2, 24);
@@ -283,57 +356,70 @@ function createBrowserCanvas(urlText: string = '', showComparison: boolean = fal
 
   // Draw comparison animation ON TOP of everything else
   if (comparisonData && showComparison) {
-    const { animatedLX } = comparisonData;
+    const { letterPositions, letterWidths } = comparisonData;
 
     // Comparison display area (in the white content area)
     const bookmarksEndY = titleBarHeight + addressBarHeight + 35;
-    const comparisonStartY = bookmarksEndY + 80;
-    const letterMoveDistance = comparisonStartY - textY;
-    const currentLetterY = textY + letterMoveDistance * animProgress;
+    const comparisonBaseY = bookmarksEndY + 60;
+    const rowHeight = 45;
 
-    // Draw the animated Cyrillic L
-    ctx.fillStyle = '#e53935'; // Red for Cyrillic
-    ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-    ctx.fillText(cyrillicL, animatedLX, currentLetterY);
+    // Draw each of the 4 Cyrillic letters
+    for (let i = 0; i < 4; i++) {
+      const letter = cyrillicLetters[i];
+      const letterX = letterPositions[i];
+      const targetY = comparisonBaseY + i * rowHeight;
 
-    // Once animation is complete, show the comparison labels
-    if (animProgress >= 1) {
-      const labelX = animatedLX + 60;
-      const arrowLength = 40;
+      // Calculate letter Y position based on state
+      let currentLetterY: number;
+      if (comparisonState === 'returnLetters') {
+        // Animate back from comparison position to URL position
+        currentLetterY = targetY - (targetY - textY) * reverseProgress;
+      } else {
+        currentLetterY = textY + (targetY - textY) * animProgress;
+      }
 
-      // First row: Cyrillic L with arrow and label
-      ctx.strokeStyle = '#e53935';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(animatedLX + 20, comparisonStartY - 10);
-      ctx.lineTo(animatedLX + 20 + arrowLength, comparisonStartY - 10);
-      ctx.lineTo(animatedLX + 20 + arrowLength - 8, comparisonStartY - 16);
-      ctx.moveTo(animatedLX + 20 + arrowLength, comparisonStartY - 10);
-      ctx.lineTo(animatedLX + 20 + arrowLength - 8, comparisonStartY - 4);
-      ctx.stroke();
+      // Draw the animated letter
+      if (comparisonState !== 'complete') {
+        // Transition font size and color when returning
+        if (comparisonState === 'returnLetters') {
+          const fontSize = 28 - (28 - 26) * reverseProgress;
+          const fontWeight = reverseProgress > 0.5 ? 'normal' : 'bold';
+          ctx.font = `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`;
 
-      ctx.fillStyle = '#e53935';
-      ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-      ctx.fillText('ӏ cyrillique (U+04CF)', labelX + 20, comparisonStartY - 4);
+          // Fade red to black as it returns
+          const redValue = Math.floor(229 - (229 - 32) * reverseProgress);
+          const greenValue = Math.floor(57 - (57 - 33) * reverseProgress);
+          const blueValue = Math.floor(53 - (53 - 36) * reverseProgress);
+          ctx.fillStyle = `rgb(${redValue}, ${greenValue}, ${blueValue})`;
+        } else {
+          ctx.fillStyle = '#e53935'; // Red for Cyrillic
+          ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        }
+        ctx.fillText(letter.char, letterX, currentLetterY);
+      }
 
-      // Second row: Latin L with arrow and label
-      const row2Y = comparisonStartY + 50;
-      ctx.fillStyle = '#1e88e5'; // Blue for Latin
-      ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-      ctx.fillText(latinL, animatedLX, row2Y);
+      // Show arrow and label when animation is complete
+      if (animProgress >= 1 && comparisonState !== 'returnLetters' && comparisonState !== 'complete') {
+        const arrowStartX = letterX + letterWidths[i] + 10;
+        const arrowLength = 30;
+        const labelX = arrowStartX + arrowLength + 10;
 
-      ctx.strokeStyle = '#1e88e5';
-      ctx.beginPath();
-      ctx.moveTo(animatedLX + 20, row2Y - 10);
-      ctx.lineTo(animatedLX + 20 + arrowLength, row2Y - 10);
-      ctx.lineTo(animatedLX + 20 + arrowLength - 8, row2Y - 16);
-      ctx.moveTo(animatedLX + 20 + arrowLength, row2Y - 10);
-      ctx.lineTo(animatedLX + 20 + arrowLength - 8, row2Y - 4);
-      ctx.stroke();
+        // Draw arrow
+        ctx.strokeStyle = '#e53935';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(arrowStartX, targetY - 8);
+        ctx.lineTo(arrowStartX + arrowLength, targetY - 8);
+        ctx.lineTo(arrowStartX + arrowLength - 6, targetY - 14);
+        ctx.moveTo(arrowStartX + arrowLength, targetY - 8);
+        ctx.lineTo(arrowStartX + arrowLength - 6, targetY - 2);
+        ctx.stroke();
 
-      ctx.fillStyle = '#1e88e5';
-      ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-      ctx.fillText('l standard (U+006C)', labelX + 20, row2Y - 4);
+        // Draw label
+        ctx.fillStyle = '#e53935';
+        ctx.font = '18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        ctx.fillText(`${letter.char} cyrillique (${letter.code})`, labelX, targetY - 3);
+      }
     }
   }
 
@@ -370,9 +456,14 @@ function createBrowserMesh(): void {
   browserMesh.scaling.x = -1; // Flip horizontally
 }
 
-function updateBrowserTexture(showComparison: boolean = false, animProgress: number = 0): void {
+function updateBrowserTexture(
+  showComparison: boolean = false,
+  animProgress: number = 0,
+  comparisonState: ComparisonState = 'none',
+  reverseProgress: number = 0
+): void {
   const textureContext = browserTexture.getContext();
-  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress);
+  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress, comparisonState, reverseProgress);
   textureContext.drawImage(sourceCanvas, 0, 0);
   browserTexture.update();
 }
@@ -386,178 +477,218 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-// Animation timing
+// Animation durations for each step
 const fullscreenDuration = 800;
-const fullscreenDelay = 200;
-const typing1Duration = 2500;  // Typing first URL (Chinese)
-const pause1Duration = 2000;   // Pause to show first URL
-const eraseDuration = 800;     // Erasing first URL
-const typing2Duration = 2500;  // Typing second URL (Cyrillic)
-const pause2Duration = 1000;   // Pause before comparison
-const comparisonDuration = 1000; // Letter moving out animation
-const comparisonHoldDuration = 3000; // Hold comparison display
-const typingDelay = 300;
-const zoomDelay = 500;
 const zoomDuration = 2500;
+const typing1Duration = 2500;
+const eraseDuration = 800;
+const emojiTypingDuration = 1500;
+const emojiEraseDuration = 800;
+const typing2Duration = 2500;
+const comparisonDuration = 1000;
+const returnLettersDuration = 1000;
 const dezoomDuration = 2000;
 
-let animationStartTime = 0;
+// Zoom target positions
+const zoomEndZ = 1.5;
+const zoomEndY = 1.8;
+const zoomEndX = 2.2;
 
-// Animation loop
+// Animation loop - step based
 scene.registerBeforeRender(() => {
-  if (animationStarted) {
-    const elapsed = Date.now() - animationStartTime;
+  const step = getCurrentStep();
+  const elapsed = Date.now() - stepStartTime;
 
-    // Fullscreen animation (move camera closer to fill screen)
-    const fullscreenStartTime = fullscreenDelay;
-    const fullscreenEndTime = fullscreenStartTime + fullscreenDuration;
+  if (step === 'idle') {
+    // Waiting for first Space press
+    return;
+  }
 
-    if (elapsed > fullscreenStartTime && elapsed < fullscreenEndTime) {
-      const fullscreenElapsed = elapsed - fullscreenStartTime;
-      fullscreenProgress = Math.min(fullscreenElapsed / fullscreenDuration, 1);
-      const easedFullscreen = easeInOutCubic(fullscreenProgress);
+  if (step === 'fullscreen') {
+    const progress = Math.min(elapsed / fullscreenDuration, 1);
+    fullscreenProgress = easeInOutCubic(progress);
+    camera.position.z = initialCameraZ + (fullscreenCameraZ - initialCameraZ) * fullscreenProgress;
 
-      // Move camera closer to simulate fullscreen
-      camera.position.z = initialCameraZ + (fullscreenCameraZ - initialCameraZ) * easedFullscreen;
-    } else if (elapsed >= fullscreenEndTime && fullscreenProgress < 1) {
-      fullscreenProgress = 1;
-      camera.position.z = fullscreenCameraZ;
+    if (progress >= 1) stepAnimationComplete = true;
+  }
+
+  if (step === 'zoom') {
+    const progress = Math.min(elapsed / zoomDuration, 1);
+    zoomProgress = easeInOutCubic(progress);
+
+    camera.position.z = fullscreenCameraZ + (zoomEndZ - fullscreenCameraZ) * zoomProgress;
+    camera.position.y = zoomEndY * zoomProgress;
+    camera.position.x = zoomEndX * zoomProgress;
+    camera.setTarget(new Vector3(zoomEndX * zoomProgress, zoomEndY * zoomProgress, 0));
+
+    if (progress >= 1) stepAnimationComplete = true;
+  }
+
+  if (step === 'typing1') {
+    const progress = Math.min(elapsed / typing1Duration, 1);
+    typingProgress = progress; // Linear for consistent typing speed
+    const charsToShow = Math.floor(typingProgress * firstUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = firstUrl.substring(0, charsToShow);
+      updateBrowserTexture();
     }
 
-    // Zoom animation (camera moves to focus on URL bar) - starts after fullscreen
-    const zoomStartTime = fullscreenEndTime + zoomDelay;
-    const zoomEndTime = zoomStartTime + zoomDuration;
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
 
-    // Zoom target positions (X is positive because browser is flipped)
-    const zoomEndZ = 1.5;
-    const zoomEndY = 1.8;
-    const zoomEndX = 2.2;
-
-    if (elapsed > zoomStartTime && elapsed < zoomEndTime) {
-      const zoomElapsed = elapsed - zoomStartTime;
-      zoomProgress = Math.min(zoomElapsed / zoomDuration, 1);
-      const easedZoom = easeInOutCubic(zoomProgress);
-
-      camera.position.z = fullscreenCameraZ + (zoomEndZ - fullscreenCameraZ) * easedZoom;
-      camera.position.y = 0 + zoomEndY * easedZoom;
-      camera.position.x = 0 + zoomEndX * easedZoom;
-
-      camera.setTarget(new Vector3(zoomEndX * easedZoom, zoomEndY * easedZoom, 0));
-    }
-
-    // Phase 1: Type first URL (Chinese characters)
-    const typing1StartTime = zoomEndTime + typingDelay;
-    const typing1EndTime = typing1StartTime + typing1Duration;
-
-    if (elapsed > typing1StartTime && elapsed < typing1EndTime) {
-      currentPhase = 'typing1';
-      const typing1Elapsed = elapsed - typing1StartTime;
-      typingProgress = Math.min(typing1Elapsed / typing1Duration, 1);
-      const easedProgress = easeOutCubic(typingProgress);
-      const charsToShow = Math.floor(easedProgress * firstUrl.length);
-
-      if (currentDisplayedUrl.length !== charsToShow) {
-        currentDisplayedUrl = firstUrl.substring(0, charsToShow);
-        updateBrowserTexture();
-      }
-    } else if (elapsed >= typing1EndTime && currentPhase === 'typing1') {
+    if (progress >= 1) {
       currentDisplayedUrl = firstUrl;
-      currentPhase = 'pause1';
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'erasing1') {
+    const progress = Math.min(elapsed / eraseDuration, 1);
+    eraseProgress = progress; // Linear for consistent speed
+    const charsToShow = Math.floor((1 - eraseProgress) * firstUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = firstUrl.substring(0, charsToShow);
       updateBrowserTexture();
     }
 
-    // Phase 2: Pause to show first URL
-    const pause1EndTime = typing1EndTime + pause1Duration;
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
 
-    // Phase 3: Erase first URL
-    const eraseStartTime = pause1EndTime;
-    const eraseEndTime = eraseStartTime + eraseDuration;
-
-    if (elapsed > eraseStartTime && elapsed < eraseEndTime) {
-      currentPhase = 'erasing';
-      const eraseElapsed = elapsed - eraseStartTime;
-      eraseProgress = Math.min(eraseElapsed / eraseDuration, 1);
-      const easedProgress = easeOutCubic(eraseProgress);
-      const charsToShow = Math.floor((1 - easedProgress) * firstUrl.length);
-
-      if (currentDisplayedUrl.length !== charsToShow) {
-        currentDisplayedUrl = firstUrl.substring(0, charsToShow);
-        updateBrowserTexture();
-      }
-    } else if (elapsed >= eraseEndTime && currentPhase === 'erasing') {
+    if (progress >= 1) {
       currentDisplayedUrl = '';
-      currentPhase = 'typing2';
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'typingEmoji') {
+    const progress = Math.min(elapsed / emojiTypingDuration, 1);
+    emojiTypingProgress = progress; // Linear for consistent typing speed
+    const charsToShow = Math.floor(emojiTypingProgress * emojiUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = emojiUrl.substring(0, charsToShow);
       updateBrowserTexture();
     }
 
-    // Phase 4: Type second URL (Cyrillic homograph)
-    const typing2StartTime = eraseEndTime;
-    const typing2EndTime = typing2StartTime + typing2Duration;
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
 
-    if (elapsed > typing2StartTime && elapsed < typing2EndTime) {
-      currentPhase = 'typing2';
-      const typing2Elapsed = elapsed - typing2StartTime;
-      typing2Progress = Math.min(typing2Elapsed / typing2Duration, 1);
-      const easedProgress = easeOutCubic(typing2Progress);
-      const charsToShow = Math.floor(easedProgress * secondUrl.length);
+    if (progress >= 1) {
+      currentDisplayedUrl = emojiUrl;
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
 
-      if (currentDisplayedUrl.length !== charsToShow) {
-        currentDisplayedUrl = secondUrl.substring(0, charsToShow);
-        updateBrowserTexture();
-      }
-    } else if (elapsed >= typing2EndTime && currentPhase === 'typing2') {
+  if (step === 'erasingEmoji') {
+    const progress = Math.min(elapsed / emojiEraseDuration, 1);
+    emojiEraseProgress = progress; // Linear for consistent speed
+    const charsToShow = Math.floor((1 - emojiEraseProgress) * emojiUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = emojiUrl.substring(0, charsToShow);
+      updateBrowserTexture();
+    }
+
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+
+    if (progress >= 1) {
+      currentDisplayedUrl = '';
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'typing2') {
+    const progress = Math.min(elapsed / typing2Duration, 1);
+    typing2Progress = progress; // Linear for consistent typing speed
+    const charsToShow = Math.floor(typing2Progress * secondUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = secondUrl.substring(0, charsToShow);
+      updateBrowserTexture();
+    }
+
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+
+    if (progress >= 1) {
       currentDisplayedUrl = secondUrl;
       currentPhase = 'pause2';
       updateBrowserTexture();
+      stepAnimationComplete = true;
     }
+  }
 
-    // Phase 5: Pause before comparison
-    const pause2EndTime = typing2EndTime + pause2Duration;
+  if (step === 'comparison') {
+    currentPhase = 'comparison';
+    const progress = Math.min(elapsed / comparisonDuration, 1);
+    comparisonProgress = progress;
+    comparisonAnimProgress = easeOutCubic(progress);
+    updateBrowserTexture(true, comparisonAnimProgress, progress >= 1 ? 'full' : 'animating', 0);
 
-    // Phase 6: Comparison animation (letter moving out)
-    const comparisonStartTime = pause2EndTime;
-    const comparisonEndTime = comparisonStartTime + comparisonDuration;
-    const comparisonHoldEndTime = comparisonEndTime + comparisonHoldDuration;
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
 
-    if (elapsed > comparisonStartTime && elapsed < comparisonEndTime) {
-      currentPhase = 'comparison';
-      const compElapsed = elapsed - comparisonStartTime;
-      comparisonProgress = Math.min(compElapsed / comparisonDuration, 1);
-      comparisonAnimProgress = easeOutCubic(comparisonProgress);
-      updateBrowserTexture(true, comparisonAnimProgress);
-    } else if (elapsed >= comparisonEndTime && elapsed < comparisonHoldEndTime) {
-      currentPhase = 'comparison';
-      comparisonAnimProgress = 1;
-      updateBrowserTexture(true, 1);
-    } else if (elapsed >= comparisonHoldEndTime && currentPhase === 'comparison') {
+    if (progress >= 1) stepAnimationComplete = true;
+  }
+
+  if (step === 'returnLetters') {
+    const progress = Math.min(elapsed / returnLettersDuration, 1);
+    returnLettersProgress = easeInOutCubic(progress);
+    updateBrowserTexture(true, 1, 'returnLetters', returnLettersProgress);
+
+    // Keep camera at zoom position
+    camera.position.z = zoomEndZ;
+    camera.position.y = zoomEndY;
+    camera.position.x = zoomEndX;
+    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+
+    if (progress >= 1) stepAnimationComplete = true;
+  }
+
+  if (step === 'dezoom') {
+    const progress = Math.min(elapsed / dezoomDuration, 1);
+    const easedProgress = easeInOutCubic(progress);
+
+    camera.position.z = zoomEndZ + (fullscreenCameraZ - zoomEndZ) * easedProgress;
+    camera.position.y = zoomEndY * (1 - easedProgress);
+    camera.position.x = zoomEndX * (1 - easedProgress);
+    camera.setTarget(new Vector3(
+      zoomEndX * (1 - easedProgress),
+      zoomEndY * (1 - easedProgress),
+      0
+    ));
+
+    // Show complete URL (letter is back in place)
+    updateBrowserTexture(false, 0, 'complete', 1);
+
+    if (progress >= 1) {
       currentPhase = 'done';
-    }
-
-    // Dezoom animation - starts after comparison hold
-    const dezoomStartTime = comparisonHoldEndTime;
-
-    // Keep camera at zoomed position until dezoom starts
-    if (elapsed >= zoomEndTime && elapsed <= dezoomStartTime) {
-      camera.position.z = zoomEndZ;
-      camera.position.y = zoomEndY;
-      camera.position.x = zoomEndX;
-      camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
-    }
-
-    if (elapsed > dezoomStartTime) {
-      const dezoomElapsed = elapsed - dezoomStartTime;
-      const dezoomProgress = Math.min(dezoomElapsed / dezoomDuration, 1);
-      const easedDezoom = easeInOutCubic(dezoomProgress);
-
-      camera.position.z = zoomEndZ + (fullscreenCameraZ - zoomEndZ) * easedDezoom;
-      camera.position.y = zoomEndY * (1 - easedDezoom);
-      camera.position.x = zoomEndX * (1 - easedDezoom);
-
-      camera.setTarget(new Vector3(
-        zoomEndX * (1 - easedDezoom),
-        zoomEndY * (1 - easedDezoom),
-        0
-      ));
+      stepAnimationComplete = true;
     }
   }
 });
@@ -567,15 +698,19 @@ window.addEventListener('resize', () => {
   engine.resize();
 });
 
-// Auto-start animation after 1 second
-setTimeout(() => {
-  animationStarted = true;
-  animationStartTime = Date.now();
-  const infoElement = document.getElementById('info');
-  if (infoElement) {
-    infoElement.style.opacity = '0';
+// Handle Space key to advance animation
+window.addEventListener('keydown', (event) => {
+  if (event.code === 'Space') {
+    event.preventDefault();
+    nextStep();
+
+    // Hide info on first press
+    const infoElement = document.getElementById('info');
+    if (infoElement) {
+      infoElement.style.opacity = '0';
+    }
   }
-}, 1000);
+});
 
 // Initialize
 createBrowserMesh();
