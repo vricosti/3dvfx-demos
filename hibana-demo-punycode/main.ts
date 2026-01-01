@@ -132,7 +132,7 @@ function nextStep(): void {
 // Comparison animation state
 type ComparisonState = 'none' | 'animating' | 'full' | 'returnLetters' | 'complete';
 
-// Create browser frame using canvas texture
+// Create browser frame using canvas texture (Chrome macOS dark theme)
 function createBrowserCanvas(
   urlText: string = '',
   showComparison: boolean = false,
@@ -146,123 +146,179 @@ function createBrowserCanvas(
   canvasEl.width = 1920;
   canvasEl.height = canvasHeight;
 
-  // Browser window background
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+  // Colors from Chrome dark theme
+  const tabBarBg = '#1f2020';      // Tab bar background (with traffic lights)
+  const tabActiveBg = '#3c3c3c';   // Active tab background
+  const addressBarBg = '#3c3c3c';  // Address bar area background
+  const urlFieldBg = '#202124';    // URL input field background
+  const textColor = '#e8eaed';
+  const textColorMuted = '#9aa0a6';
+  const iconColor = '#9aa0a6';
 
-  // Chrome title bar (gray)
-  const titleBarHeight = 50;
-  ctx.fillStyle = '#5a5a5a';
-  ctx.fillRect(0, 0, canvasEl.width, titleBarHeight);
+  // Tab bar area
+  const tabBarHeight = 46;
+  ctx.fillStyle = tabBarBg;
+  ctx.fillRect(0, 0, canvasEl.width, tabBarHeight);
 
-  // Tab
-  ctx.fillStyle = '#5a5a5a';
+  // macOS traffic lights (left side) - centered vertically
+  const trafficLightY = tabBarHeight / 2;
+  const trafficLightStartX = 20;
+  const trafficLightRadius = 7;
+  const trafficLightSpacing = 22;
+
+  // Red (close)
+  ctx.fillStyle = '#ff5f57';
   ctx.beginPath();
-  ctx.moveTo(20, titleBarHeight);
-  ctx.lineTo(40, 5);
-  ctx.lineTo(280, 5);
-  ctx.lineTo(300, titleBarHeight);
+  ctx.arc(trafficLightStartX, trafficLightY, trafficLightRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Yellow (minimize)
+  ctx.fillStyle = '#ffbd2e';
+  ctx.beginPath();
+  ctx.arc(trafficLightStartX + trafficLightSpacing, trafficLightY, trafficLightRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Green (maximize)
+  ctx.fillStyle = '#28ca41';
+  ctx.beginPath();
+  ctx.arc(trafficLightStartX + trafficLightSpacing * 2, trafficLightY, trafficLightRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Active tab (rounded top corners) - less gap at top
+  const tabStartX = 90;
+  const tabWidth = 220;
+  const tabHeight = 40;  // Taller tab to reduce gap
+  const tabY = tabBarHeight - tabHeight;
+  const tabRadius = 8;
+
+  ctx.fillStyle = tabActiveBg;
+  ctx.beginPath();
+  ctx.moveTo(tabStartX, tabBarHeight);
+  ctx.lineTo(tabStartX, tabY + tabRadius);
+  ctx.quadraticCurveTo(tabStartX, tabY, tabStartX + tabRadius, tabY);
+  ctx.lineTo(tabStartX + tabWidth - tabRadius, tabY);
+  ctx.quadraticCurveTo(tabStartX + tabWidth, tabY, tabStartX + tabWidth, tabY + tabRadius);
+  ctx.lineTo(tabStartX + tabWidth, tabBarHeight);
   ctx.closePath();
   ctx.fill();
 
-  // Active tab background
-  ctx.fillStyle = '#ffffff';
+  // Chrome icon in tab (aligned with traffic lights)
+  const chromeIconX = tabStartX + 16;
+  const chromeIconY = trafficLightY;
+  ctx.fillStyle = '#4285f4';
   ctx.beginPath();
-  ctx.moveTo(25, titleBarHeight);
-  ctx.lineTo(45, 10);
-  ctx.lineTo(275, 10);
-  ctx.lineTo(295, titleBarHeight);
-  ctx.closePath();
+  ctx.arc(chromeIconX, chromeIconY, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ea4335';
+  ctx.beginPath();
+  ctx.arc(chromeIconX, chromeIconY, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fbbc05';
+  ctx.beginPath();
+  ctx.arc(chromeIconX, chromeIconY, 3, 0, Math.PI * 2);
   ctx.fill();
 
   // Tab title
-  ctx.fillStyle = '#333';
-  ctx.font = '24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-  ctx.fillText('New Tab', 80, 38);
+  ctx.fillStyle = textColor;
+  ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  ctx.fillText('Nouvel onglet', tabStartX + 34, tabY + 22);
 
-  // Window controls (right side)
-  const controlsY = 25;
-  const controlsStartX = canvasEl.width - 150;
-
-  // Minimize
-  ctx.fillStyle = '#888';
-  ctx.fillRect(controlsStartX, controlsY, 20, 3);
-
-  // Maximize
-  ctx.strokeStyle = '#888';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(controlsStartX + 40, controlsY - 8, 16, 16);
-
-  // Close (X)
+  // Tab close button (X)
+  ctx.strokeStyle = textColorMuted;
+  ctx.lineWidth = 1.5;
+  const closeX = tabStartX + tabWidth - 24;
+  const closeY = tabY + tabHeight / 2 + 2;
   ctx.beginPath();
-  ctx.moveTo(controlsStartX + 80, controlsY - 8);
-  ctx.lineTo(controlsStartX + 96, controlsY + 8);
-  ctx.moveTo(controlsStartX + 96, controlsY - 8);
-  ctx.lineTo(controlsStartX + 80, controlsY + 8);
+  ctx.moveTo(closeX - 4, closeY - 4);
+  ctx.lineTo(closeX + 4, closeY + 4);
+  ctx.moveTo(closeX + 4, closeY - 4);
+  ctx.lineTo(closeX - 4, closeY + 4);
+  ctx.stroke();
+
+  // New tab button (+)
+  const plusX = tabStartX + tabWidth + 15;
+  ctx.strokeStyle = iconColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(plusX - 6, trafficLightY);
+  ctx.lineTo(plusX + 6, trafficLightY);
+  ctx.moveTo(plusX, trafficLightY - 6);
+  ctx.lineTo(plusX, trafficLightY + 6);
   ctx.stroke();
 
   // Address bar area
-  const addressBarY = titleBarHeight;
-  const addressBarHeight = 60;
-  ctx.fillStyle = '#f1f3f4';
+  const addressBarY = tabBarHeight;
+  const addressBarHeight = 52;
+  ctx.fillStyle = addressBarBg;
   ctx.fillRect(0, addressBarY, canvasEl.width, addressBarHeight);
 
   // Navigation buttons
-  const navY = addressBarY + 20;
-  ctx.fillStyle = '#5f6368';
+  const navY = addressBarY + addressBarHeight / 2;
+  ctx.strokeStyle = iconColor;
+  ctx.lineWidth = 2;
 
   // Back arrow
+  const backX = 28;
   ctx.beginPath();
-  ctx.moveTo(50, navY + 10);
-  ctx.lineTo(35, navY);
-  ctx.lineTo(50, navY - 10);
+  ctx.moveTo(backX + 6, navY - 6);
+  ctx.lineTo(backX, navY);
+  ctx.lineTo(backX + 6, navY + 6);
   ctx.stroke();
 
   // Forward arrow
+  const forwardX = 60;
   ctx.beginPath();
-  ctx.moveTo(80, navY - 10);
-  ctx.lineTo(95, navY);
-  ctx.lineTo(80, navY + 10);
+  ctx.moveTo(forwardX - 6, navY - 6);
+  ctx.lineTo(forwardX, navY);
+  ctx.lineTo(forwardX - 6, navY + 6);
   ctx.stroke();
 
-  // Refresh
+  // Refresh button (circular arrow)
+  const refreshX = 100;
   ctx.beginPath();
-  ctx.arc(135, navY, 12, 0, Math.PI * 1.7);
+  ctx.arc(refreshX, navY, 8, -Math.PI * 0.7, Math.PI * 0.9);
   ctx.stroke();
-
-  // Address bar (rounded rectangle)
-  const urlBarX = 180;
-  const urlBarY = addressBarY + 10;
-  const urlBarWidth = canvasEl.width - 400;
-  const urlBarHeight = 40;
-  const radius = 20;
-
-  ctx.fillStyle = '#ffffff';
+  // Arrow head on refresh
   ctx.beginPath();
-  ctx.moveTo(urlBarX + radius, urlBarY);
-  ctx.lineTo(urlBarX + urlBarWidth - radius, urlBarY);
-  ctx.quadraticCurveTo(urlBarX + urlBarWidth, urlBarY, urlBarX + urlBarWidth, urlBarY + radius);
-  ctx.lineTo(urlBarX + urlBarWidth, urlBarY + urlBarHeight - radius);
-  ctx.quadraticCurveTo(urlBarX + urlBarWidth, urlBarY + urlBarHeight, urlBarX + urlBarWidth - radius, urlBarY + urlBarHeight);
-  ctx.lineTo(urlBarX + radius, urlBarY + urlBarHeight);
-  ctx.quadraticCurveTo(urlBarX, urlBarY + urlBarHeight, urlBarX, urlBarY + urlBarHeight - radius);
-  ctx.lineTo(urlBarX, urlBarY + radius);
-  ctx.quadraticCurveTo(urlBarX, urlBarY, urlBarX + radius, urlBarY);
+  ctx.moveTo(refreshX + 6, navY - 6);
+  ctx.lineTo(refreshX + 9, navY - 1);
+  ctx.lineTo(refreshX + 3, navY - 1);
   ctx.closePath();
+  ctx.fillStyle = iconColor;
   ctx.fill();
 
-  // Lock icon (simplified)
-  ctx.fillStyle = '#5f6368';
+  // URL bar (rounded rectangle, dark background)
+  const urlBarX = 140;
+  const urlBarY = addressBarY + 8;
+  const urlBarWidth = canvasEl.width - 280;
+  const urlBarHeight = 36;
+  const urlBarRadius = 18;
+
+  ctx.fillStyle = urlFieldBg;
   ctx.beginPath();
-  ctx.arc(210, urlBarY + 20, 6, Math.PI, 0);
-  ctx.rect(204, urlBarY + 14, 12, 12);
+  ctx.roundRect(urlBarX, urlBarY, urlBarWidth, urlBarHeight, urlBarRadius);
   ctx.fill();
 
-  // URL text with typing cursor
-  ctx.fillStyle = '#202124';
-  ctx.font = '26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-  const textX = 240;
-  const textY = urlBarY + 30;
+  // Info/lock icon (circle with i)
+  const infoIconX = urlBarX + 26;
+  const infoIconY = urlBarY + urlBarHeight / 2;
+  ctx.strokeStyle = iconColor;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(infoIconX, infoIconY, 8, 0, Math.PI * 2);
+  ctx.stroke();
+  // "i" inside
+  ctx.fillStyle = iconColor;
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('i', infoIconX, infoIconY + 4);
+  ctx.textAlign = 'left';
+
+  // URL text
+  ctx.fillStyle = textColor;
+  ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  const textX = urlBarX + 48;
+  const textY = urlBarY + 24;
 
   // Store values for comparison drawing later (after all UI elements)
   let comparisonData: { letterPositions: number[]; letterWidths: number[] } | null = null;
@@ -299,52 +355,54 @@ function createBrowserCanvas(
   const step = getCurrentStep();
   if (step !== 'idle' && (step === 'typing1' || step === 'typing2' || step === 'typingEmoji' || step === 'erasing1' || step === 'erasingEmoji')) {
     const textWidth = ctx.measureText(urlText).width;
-    ctx.fillStyle = '#202124';
-    ctx.fillRect(textX + textWidth + 2, urlBarY + 10, 2, 24);
+    ctx.fillStyle = textColor;
+    ctx.fillRect(textX + textWidth + 2, urlBarY + 8, 2, 20);
   }
 
-  // Browser icons on the right
-  ctx.fillStyle = '#5f6368';
-  const iconX = canvasEl.width - 180;
+  // Right side icons
+  const rightIconsX = canvasEl.width - 100;
 
-  // Extensions icon
+  // Download icon (arrow down with line)
+  ctx.strokeStyle = iconColor;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(iconX, navY, 3, 0, Math.PI * 2);
-  ctx.arc(iconX + 10, navY, 3, 0, Math.PI * 2);
-  ctx.arc(iconX + 5, navY - 8, 3, 0, Math.PI * 2);
-  ctx.arc(iconX + 5, navY + 8, 3, 0, Math.PI * 2);
+  ctx.moveTo(rightIconsX, navY - 6);
+  ctx.lineTo(rightIconsX, navY + 4);
+  ctx.lineTo(rightIconsX - 5, navY - 1);
+  ctx.moveTo(rightIconsX, navY + 4);
+  ctx.lineTo(rightIconsX + 5, navY - 1);
+  ctx.moveTo(rightIconsX - 6, navY + 7);
+  ctx.lineTo(rightIconsX + 6, navY + 7);
+  ctx.stroke();
+
+  // Three dots menu (vertical)
+  ctx.fillStyle = iconColor;
+  const menuX = rightIconsX + 45;
+  ctx.beginPath();
+  ctx.arc(menuX, navY - 7, 2, 0, Math.PI * 2);
+  ctx.arc(menuX, navY, 2, 0, Math.PI * 2);
+  ctx.arc(menuX, navY + 7, 2, 0, Math.PI * 2);
   ctx.fill();
 
-  // Profile icon
+  // Chevron (dropdown) at far right
+  const chevronX = canvasEl.width - 25;
+  ctx.strokeStyle = iconColor;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(iconX + 50, navY - 5, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(iconX + 50, navY + 15, 12, Math.PI * 1.2, Math.PI * 1.8);
-  ctx.fill();
+  ctx.moveTo(chevronX - 4, navY - 3);
+  ctx.lineTo(chevronX, navY + 2);
+  ctx.lineTo(chevronX + 4, navY - 3);
+  ctx.stroke();
 
-  // Menu dots
-  ctx.beginPath();
-  ctx.arc(iconX + 100, navY - 8, 3, 0, Math.PI * 2);
-  ctx.arc(iconX + 100, navY, 3, 0, Math.PI * 2);
-  ctx.arc(iconX + 100, navY + 8, 3, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Bookmarks bar
-  const bookmarksY = addressBarY + addressBarHeight;
-  ctx.fillStyle = '#f8f9fa';
-  ctx.fillRect(0, bookmarksY, canvasEl.width, 35);
-
-  ctx.fillStyle = '#5f6368';
-  ctx.font = '18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-  ctx.fillText('Bookmarks', 30, bookmarksY + 24);
+  // Total browser chrome height (no bookmarks bar to match image)
+  const browserChromeHeight = tabBarHeight + addressBarHeight;
 
   // Main content area (white)
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, bookmarksY + 35, canvasEl.width, canvasEl.height - bookmarksY - 35);
+  ctx.fillRect(0, browserChromeHeight, canvasEl.width, canvasEl.height - browserChromeHeight);
 
   // Google logo placeholder in center
-  const centerY = (canvasEl.height + bookmarksY + 35) / 2 - 50;
+  const centerY = (canvasEl.height + browserChromeHeight) / 2 - 50;
   ctx.fillStyle = '#4285f4';
   ctx.font = 'bold 120px "Product Sans", Arial, sans-serif';
   ctx.fillText('G', canvasEl.width / 2 - 210, centerY);
@@ -478,10 +536,9 @@ function createBrowserMesh(): void {
 
   // Create material
   browserMaterial = new StandardMaterial('browserMaterial', scene);
-  browserMaterial.diffuseTexture = browserTexture;
-  browserMaterial.emissiveTexture = browserTexture; // Make it visible without lights
-  browserMaterial.backFaceCulling = false;
+  browserMaterial.emissiveTexture = browserTexture; // Only emissive for exact colors
   browserMaterial.disableLighting = true;
+  browserMaterial.backFaceCulling = false;
 
   // Create browser plane - sideOrientation DOUBLESIDE to be visible from both sides
   browserMesh = MeshBuilder.CreatePlane('browser', {
@@ -508,7 +565,6 @@ function updateBrowserTexture(
     currentTextureHeight = targetHeight;
     browserTexture.dispose();
     browserTexture = new DynamicTexture('browserTexture', { width: 1920, height: targetHeight }, scene, true);
-    browserMaterial.diffuseTexture = browserTexture;
     browserMaterial.emissiveTexture = browserTexture;
   }
 
