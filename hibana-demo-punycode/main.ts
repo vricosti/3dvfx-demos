@@ -20,12 +20,36 @@ const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: 
 const scene = new Scene(engine);
 scene.clearColor = new Color4(0.102, 0.102, 0.18, 1); // #1a1a2e
 
-// Camera positions for fullscreen effect
-const initialCameraZ = 5;
-const fullscreenCameraZ = 3.9;
+// Camera position (fixed)
+const cameraZ = 5;
+
+// Browser mesh base dimensions
+const browserBaseWidth = 8;
+const browserBaseHeight = 4.5;
+
+// Calculate visible area at Z=0
+function getVisibleArea(): { width: number; height: number } {
+  const aspectRatio = canvas.width / canvas.height;
+  const fovRad = camera.fov;
+  const visibleHeight = 2 * Math.tan(fovRad / 2) * cameraZ;
+  const visibleWidth = visibleHeight * aspectRatio;
+  return { width: visibleWidth, height: visibleHeight };
+}
+
+// Get viewport aspect ratio
+function getViewportAspect(): number {
+  return canvas.width / canvas.height;
+}
+
+// Calculate uniform scale to fill viewport width
+function calculateBrowserScale(): number {
+  const visible = getVisibleArea();
+  // Scale to fill width completely
+  return visible.width / browserBaseWidth;
+}
 
 // Create camera - positive Z looking at origin
-const camera = new FreeCamera('camera', new Vector3(0, 0, initialCameraZ), scene);
+const camera = new FreeCamera('camera', new Vector3(0, 0, cameraZ), scene);
 camera.setTarget(Vector3.Zero());
 camera.fov = (60 * Math.PI) / 180; // 60 degrees in radians
 
@@ -55,12 +79,11 @@ const emojiUrl = '💪.com';
 // Third URL: Cyrillic homograph (а, р, р, ӏ, е are Cyrillic, looks like "apple")
 const secondUrl = 'аррӏе.com';
 
-// Cyrillic letters info for comparison animation
-const cyrillicLetters = [
-  { char: 'а', code: 'U+0430', latin: 'a' },
-  { char: 'р', code: 'U+0440', latin: 'p' },
-  { char: 'р', code: 'U+0440', latin: 'p' },
-  { char: 'ӏ', code: 'U+04CF', latin: 'l' }
+// Cyrillic letters info for comparison animation (grouped)
+const cyrillicLettersGrouped = [
+  { chars: 'а', code: 'U+0430', indices: [0], label: 'а' },
+  { chars: 'рр', code: 'U+0440', indices: [1, 2], label: 'р' },
+  { chars: 'ӏ', code: 'U+04CF', indices: [3], label: 'ӏ' }
 ];
 
 let currentDisplayedUrl = '';
@@ -115,12 +138,13 @@ function createBrowserCanvas(
   showComparison: boolean = false,
   animProgress: number = 0,
   comparisonState: ComparisonState = 'none',
-  reverseProgress: number = 0
+  reverseProgress: number = 0,
+  canvasHeight: number = 1080
 ): HTMLCanvasElement {
   const canvasEl = document.createElement('canvas');
   const ctx = canvasEl.getContext('2d')!;
   canvasEl.width = 1920;
-  canvasEl.height = 1080;
+  canvasEl.height = canvasHeight;
 
   // Browser window background
   ctx.fillStyle = '#ffffff';
@@ -246,6 +270,7 @@ function createBrowserCanvas(
   if (showComparison && urlText === secondUrl) {
     // In comparison mode, draw URL with gaps for the 4 Cyrillic letters (а, р, р, ӏ)
     // URL is "аррӏе.com" - first 4 chars are Cyrillic, rest is "е.com"
+    const cyrillicChars = ['а', 'р', 'р', 'ӏ'];
     const afterCyrillic = urlText.substring(4); // "е.com"
 
     // Calculate positions for each letter
@@ -255,7 +280,7 @@ function createBrowserCanvas(
 
     for (let i = 0; i < 4; i++) {
       letterPositions.push(currentX);
-      const charWidth = ctx.measureText(cyrillicLetters[i].char).width;
+      const charWidth = ctx.measureText(cyrillicChars[i]).width;
       letterWidths.push(charWidth);
       currentX += charWidth;
     }
@@ -358,27 +383,39 @@ function createBrowserCanvas(
   if (comparisonData && showComparison) {
     const { letterPositions, letterWidths } = comparisonData;
 
-    // Comparison display area (in the white content area)
-    const bookmarksEndY = titleBarHeight + addressBarHeight + 35;
-    const comparisonBaseY = bookmarksEndY + 60;
-    const rowHeight = 45;
+    // Comparison display area - stacked vertically below URL bar
+    const baseY = textY + 50; // Start position below URL
+    const rowHeight = 38; // Vertical spacing between rows
+    const alignX = letterPositions[0]; // All letters align to first letter X position
 
-    // Draw each of the 4 Cyrillic letters
-    for (let i = 0; i < 4; i++) {
-      const letter = cyrillicLetters[i];
-      const letterX = letterPositions[i];
-      const targetY = comparisonBaseY + i * rowHeight;
+    // Draw each grouped Cyrillic letter(s) on separate rows
+    for (let groupIdx = 0; groupIdx < cyrillicLettersGrouped.length; groupIdx++) {
+      const group = cyrillicLettersGrouped[groupIdx];
+      const firstIdx = group.indices[0];
+      const originalX = letterPositions[firstIdx];
 
-      // Calculate letter Y position based on state
+      // Calculate total width for this group
+      let groupWidth = 0;
+      for (const idx of group.indices) {
+        groupWidth += letterWidths[idx];
+      }
+
+      // Target Y for this row
+      const targetY = baseY + groupIdx * rowHeight;
+
+      // Calculate letter position based on state
       let currentLetterY: number;
+      let currentLetterX: number;
       if (comparisonState === 'returnLetters') {
         // Animate back from comparison position to URL position
         currentLetterY = targetY - (targetY - textY) * reverseProgress;
+        currentLetterX = alignX + (originalX - alignX) * reverseProgress;
       } else {
         currentLetterY = textY + (targetY - textY) * animProgress;
+        currentLetterX = originalX + (alignX - originalX) * animProgress;
       }
 
-      // Draw the animated letter
+      // Draw the animated letter(s)
       if (comparisonState !== 'complete') {
         // Transition font size and color when returning
         if (comparisonState === 'returnLetters') {
@@ -395,30 +432,30 @@ function createBrowserCanvas(
           ctx.fillStyle = '#e53935'; // Red for Cyrillic
           ctx.font = 'bold 28px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
         }
-        ctx.fillText(letter.char, letterX, currentLetterY);
+        ctx.fillText(group.chars, currentLetterX, currentLetterY);
       }
 
       // Show arrow and label when animation is complete
       if (animProgress >= 1 && comparisonState !== 'returnLetters' && comparisonState !== 'complete') {
-        const arrowStartX = letterX + letterWidths[i] + 10;
-        const arrowLength = 30;
-        const labelX = arrowStartX + arrowLength + 10;
+        const arrowStartX = alignX + groupWidth + 15;
+        const arrowLength = 25;
+        const labelX = arrowStartX + arrowLength + 8;
 
-        // Draw arrow
+        // Draw arrow pointing right
         ctx.strokeStyle = '#e53935';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(arrowStartX, targetY - 8);
         ctx.lineTo(arrowStartX + arrowLength, targetY - 8);
-        ctx.lineTo(arrowStartX + arrowLength - 6, targetY - 14);
+        ctx.lineTo(arrowStartX + arrowLength - 5, targetY - 13);
         ctx.moveTo(arrowStartX + arrowLength, targetY - 8);
-        ctx.lineTo(arrowStartX + arrowLength - 6, targetY - 2);
+        ctx.lineTo(arrowStartX + arrowLength - 5, targetY - 3);
         ctx.stroke();
 
         // Draw label
         ctx.fillStyle = '#e53935';
-        ctx.font = '18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
-        ctx.fillText(`${letter.char} cyrillique (${letter.code})`, labelX, targetY - 3);
+        ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        ctx.fillText(`${group.label} cyrillique (${group.code})`, labelX, targetY - 4);
       }
     }
   }
@@ -456,14 +493,27 @@ function createBrowserMesh(): void {
   browserMesh.scaling.x = -1; // Flip horizontally
 }
 
+let currentTextureHeight = 1080;
+
 function updateBrowserTexture(
   showComparison: boolean = false,
   animProgress: number = 0,
   comparisonState: ComparisonState = 'none',
   reverseProgress: number = 0
 ): void {
+  const targetHeight = getCanvasHeight();
+
+  // Recreate texture if height changed
+  if (targetHeight !== currentTextureHeight) {
+    currentTextureHeight = targetHeight;
+    browserTexture.dispose();
+    browserTexture = new DynamicTexture('browserTexture', { width: 1920, height: targetHeight }, scene, true);
+    browserMaterial.diffuseTexture = browserTexture;
+    browserMaterial.emissiveTexture = browserTexture;
+  }
+
   const textureContext = browserTexture.getContext();
-  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress, comparisonState, reverseProgress);
+  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress, comparisonState, reverseProgress, targetHeight);
   textureContext.drawImage(sourceCanvas, 0, 0);
   browserTexture.update();
 }
@@ -489,10 +539,47 @@ const comparisonDuration = 1000;
 const returnLettersDuration = 1000;
 const dezoomDuration = 2000;
 
-// Zoom target positions
-const zoomEndZ = 1.5;
-const zoomEndY = 1.8;
-const zoomEndX = 2.2;
+// Camera target position when zoomed (to show address bar)
+const zoomedCameraX = 2.5; // Positive to move camera right (shows left side of browser)
+const zoomedCameraY = 1.8; // Move camera up to show top of browser
+const zoomedCameraZ = 2.0; // Move camera closer
+
+// Initial scale for idle state (smaller browser)
+const idleScale = 0.7;
+
+// Calculate required canvas height to fill viewport
+function getCanvasHeight(): number {
+  const viewportAspect = getViewportAspect();
+  const browserAspect = browserBaseWidth / browserBaseHeight;
+
+  if (viewportAspect < browserAspect) {
+    // Viewport is taller - need taller canvas
+    return Math.round(1920 / viewportAspect);
+  }
+  return 1080; // Default height for wider viewports
+}
+
+// Update browser mesh scale and camera position
+function updateBrowserTransform(zoomProgress: number = 0, meshScale: number = 1.0): void {
+  const baseScale = calculateBrowserScale();
+  const canvasHeight = getCanvasHeight();
+
+  // Mesh scale (for idle/fullscreen transition)
+  browserMesh.scaling.x = -baseScale * meshScale; // Negative for horizontal flip
+  browserMesh.scaling.y = baseScale * meshScale * (canvasHeight / 1080);
+  browserMesh.position.x = 0;
+  browserMesh.position.y = 0;
+
+  // Move camera based on zoom progress
+  const targetX = zoomedCameraX * zoomProgress;
+  const targetY = zoomedCameraY * zoomProgress;
+  const targetZ = cameraZ + (zoomedCameraZ - cameraZ) * zoomProgress;
+
+  camera.position.x = targetX;
+  camera.position.y = targetY;
+  camera.position.z = targetZ;
+  camera.setTarget(new Vector3(targetX, targetY, 0));
+}
 
 // Animation loop - step based
 scene.registerBeforeRender(() => {
@@ -500,15 +587,17 @@ scene.registerBeforeRender(() => {
   const elapsed = Date.now() - stepStartTime;
 
   if (step === 'idle') {
-    // Waiting for first Space press
+    // Initial state - smaller browser, no zoom
+    updateBrowserTransform(0, idleScale);
     return;
   }
 
   if (step === 'fullscreen') {
     const progress = Math.min(elapsed / fullscreenDuration, 1);
     fullscreenProgress = easeInOutCubic(progress);
-    camera.position.z = initialCameraZ + (fullscreenCameraZ - initialCameraZ) * fullscreenProgress;
-
+    // Animate from idleScale to 1.0 (fullscreen)
+    const currentScale = idleScale + (1.0 - idleScale) * fullscreenProgress;
+    updateBrowserTransform(0, currentScale);
     if (progress >= 1) stepAnimationComplete = true;
   }
 
@@ -516,10 +605,8 @@ scene.registerBeforeRender(() => {
     const progress = Math.min(elapsed / zoomDuration, 1);
     zoomProgress = easeInOutCubic(progress);
 
-    camera.position.z = fullscreenCameraZ + (zoomEndZ - fullscreenCameraZ) * zoomProgress;
-    camera.position.y = zoomEndY * zoomProgress;
-    camera.position.x = zoomEndX * zoomProgress;
-    camera.setTarget(new Vector3(zoomEndX * zoomProgress, zoomEndY * zoomProgress, 0));
+    // Move camera to focus on address bar
+    updateBrowserTransform(zoomProgress);
 
     if (progress >= 1) stepAnimationComplete = true;
   }
@@ -534,11 +621,8 @@ scene.registerBeforeRender(() => {
       updateBrowserTexture();
     }
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) {
       currentDisplayedUrl = firstUrl;
@@ -557,11 +641,8 @@ scene.registerBeforeRender(() => {
       updateBrowserTexture();
     }
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) {
       currentDisplayedUrl = '';
@@ -580,11 +661,8 @@ scene.registerBeforeRender(() => {
       updateBrowserTexture();
     }
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) {
       currentDisplayedUrl = emojiUrl;
@@ -603,11 +681,8 @@ scene.registerBeforeRender(() => {
       updateBrowserTexture();
     }
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) {
       currentDisplayedUrl = '';
@@ -626,11 +701,8 @@ scene.registerBeforeRender(() => {
       updateBrowserTexture();
     }
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) {
       currentDisplayedUrl = secondUrl;
@@ -647,11 +719,8 @@ scene.registerBeforeRender(() => {
     comparisonAnimProgress = easeOutCubic(progress);
     updateBrowserTexture(true, comparisonAnimProgress, progress >= 1 ? 'full' : 'animating', 0);
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) stepAnimationComplete = true;
   }
@@ -661,11 +730,8 @@ scene.registerBeforeRender(() => {
     returnLettersProgress = easeInOutCubic(progress);
     updateBrowserTexture(true, 1, 'returnLetters', returnLettersProgress);
 
-    // Keep camera at zoom position
-    camera.position.z = zoomEndZ;
-    camera.position.y = zoomEndY;
-    camera.position.x = zoomEndX;
-    camera.setTarget(new Vector3(zoomEndX, zoomEndY, 0));
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
 
     if (progress >= 1) stepAnimationComplete = true;
   }
@@ -674,14 +740,8 @@ scene.registerBeforeRender(() => {
     const progress = Math.min(elapsed / dezoomDuration, 1);
     const easedProgress = easeInOutCubic(progress);
 
-    camera.position.z = zoomEndZ + (fullscreenCameraZ - zoomEndZ) * easedProgress;
-    camera.position.y = zoomEndY * (1 - easedProgress);
-    camera.position.x = zoomEndX * (1 - easedProgress);
-    camera.setTarget(new Vector3(
-      zoomEndX * (1 - easedProgress),
-      zoomEndY * (1 - easedProgress),
-      0
-    ));
+    // Move camera back to initial position
+    updateBrowserTransform(1 - easedProgress);
 
     // Show complete URL (letter is back in place)
     updateBrowserTexture(false, 0, 'complete', 1);
@@ -696,6 +756,8 @@ scene.registerBeforeRender(() => {
 // Handle window resize
 window.addEventListener('resize', () => {
   engine.resize();
+  // Update texture for new viewport size
+  updateBrowserTexture();
 });
 
 // Handle Space key to advance animation
