@@ -10,6 +10,41 @@ import {
   Mesh,
 } from '@babylonjs/core';
 
+// Theme configuration
+type Theme = 'dark' | 'light';
+const currentTheme: Theme = 'dark';
+
+const themes = {
+  dark: {
+    tabBarBg: '#1f2020',
+    tabActiveBg: '#3c3c3c',
+    addressBarBg: '#3c3c3c',
+    urlFieldBg: '#202124',
+    textColor: '#e8eaed',
+    textColorMuted: '#9aa0a6',
+    iconColor: '#9aa0a6',
+    contentBg: '#3c3c3c',
+    searchBarBg: '#ffffff',
+    searchBarBorder: '#5f6368',
+    comparisonTextColor: '#ffffff', // Arrows and labels color
+  },
+  light: {
+    tabBarBg: '#dee1e6',
+    tabActiveBg: '#ffffff',
+    addressBarBg: '#ffffff',
+    urlFieldBg: '#f1f3f4',
+    textColor: '#202124',
+    textColorMuted: '#5f6368',
+    iconColor: '#5f6368',
+    contentBg: '#ffffff',
+    searchBarBg: '#ffffff',
+    searchBarBorder: '#dfe1e5',
+    comparisonTextColor: '#000000', // Arrows and labels color
+  },
+};
+
+const theme = themes[currentTheme];
+
 // Get the canvas element
 const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
 
@@ -54,8 +89,8 @@ camera.setTarget(Vector3.Zero());
 camera.fov = (60 * Math.PI) / 180; // 60 degrees in radians
 
 // Animation steps (triggered by Space key)
-type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'showAttack' | 'returnLetters' | 'dezoom' | 'done';
-const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'showAttack', 'returnLetters', 'dezoom', 'done'];
+type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'showAttack' | 'returnLetters' | 'dezoom' | 'flip' | 'flipBack' | 'zoomFinal' | 'erasing3' | 'typing3' | 'erasing4' | 'typing4' | 'dezoomFinal' | 'done';
+const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'showAttack', 'returnLetters', 'dezoom', 'flip', 'flipBack', 'zoomFinal', 'erasing3', 'typing3', 'erasing4', 'typing4', 'dezoomFinal', 'done'];
 let currentStepIndex = 0;
 let stepStartTime = 0;
 let stepAnimationComplete = false;
@@ -71,6 +106,10 @@ let typing2Progress = 0;
 let comparisonProgress = 0;
 let comparisonAnimProgress = 0;
 let returnLettersProgress = 0;
+let erase3Progress = 0;
+let typing3Progress = 0;
+let erase4Progress = 0;
+let typing4Progress = 0;
 
 // First URL: Chinese characters
 const firstUrl = '例子.测试';
@@ -78,6 +117,10 @@ const firstUrl = '例子.测试';
 const emojiUrl = '💪.com';
 // Third URL: Cyrillic homograph (а, р, р, ӏ, е are Cyrillic, looks like "apple")
 const secondUrl = 'аррӏе.com';
+// Fourth URL: GitHub repo
+const thirdUrl = 'https://github.com/vricosti/hibana-stack';
+// Fifth URL: French accented domain
+const fourthUrl = 'tiéuntigre.fr';
 
 // Cyrillic letters info for comparison animation (grouped)
 const cyrillicLettersGrouped = [
@@ -147,14 +190,14 @@ function createBrowserCanvas(
   canvasEl.width = 1920;
   canvasEl.height = canvasHeight;
 
-  // Colors from Chrome dark theme
-  const tabBarBg = '#1f2020';      // Tab bar background (with traffic lights)
-  const tabActiveBg = '#3c3c3c';   // Active tab background
-  const addressBarBg = '#3c3c3c';  // Address bar area background
-  const urlFieldBg = '#202124';    // URL input field background
-  const textColor = '#e8eaed';
-  const textColorMuted = '#9aa0a6';
-  const iconColor = '#9aa0a6';
+  // Colors from theme
+  const tabBarBg = theme.tabBarBg;
+  const tabActiveBg = theme.tabActiveBg;
+  const addressBarBg = theme.addressBarBg;
+  const urlFieldBg = theme.urlFieldBg;
+  const textColor = theme.textColor;
+  const textColorMuted = theme.textColorMuted;
+  const iconColor = theme.iconColor;
 
   // Tab bar area
   const tabBarHeight = 46;
@@ -391,8 +434,8 @@ function createBrowserCanvas(
   // Total browser chrome height (no bookmarks bar to match image)
   const browserChromeHeight = tabBarHeight + addressBarHeight;
 
-  // Main content area (white)
-  ctx.fillStyle = '#ffffff';
+  // Main content area
+  ctx.fillStyle = theme.contentBg;
   ctx.fillRect(0, browserChromeHeight, canvasEl.width, canvasEl.height - browserChromeHeight);
 
   // Google logo placeholder in center
@@ -416,7 +459,14 @@ function createBrowserCanvas(
   const searchBarX = (canvasEl.width - searchBarWidth) / 2;
   const searchBarY = centerY + 50;
 
-  ctx.strokeStyle = '#dfe1e5';
+  // Fill search bar
+  ctx.fillStyle = theme.searchBarBg;
+  ctx.beginPath();
+  ctx.roundRect(searchBarX, searchBarY, searchBarWidth, 50, 25);
+  ctx.fill();
+
+  // Stroke border
+  ctx.strokeStyle = theme.searchBarBorder;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.roundRect(searchBarX, searchBarY, searchBarWidth, 50, 25);
@@ -493,8 +543,8 @@ function createBrowserCanvas(
         const arrowLength = 25;
         const labelX = arrowStartX + arrowLength + 8;
 
-        // Draw arrow pointing right (black)
-        ctx.strokeStyle = '#000000';
+        // Draw arrow pointing right
+        ctx.strokeStyle = theme.comparisonTextColor;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(arrowStartX, targetY - 8);
@@ -504,8 +554,8 @@ function createBrowserCanvas(
         ctx.lineTo(arrowStartX + arrowLength - 5, targetY - 3);
         ctx.stroke();
 
-        // Draw label (black)
-        ctx.fillStyle = '#000000';
+        // Draw label
+        ctx.fillStyle = theme.comparisonTextColor;
         ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
         ctx.fillText(`${group.label} cyrillique (${group.code})`, labelX, targetY - 4);
       }
@@ -515,7 +565,6 @@ function createBrowserCanvas(
     if (showAttack && animProgress >= 1 && comparisonState !== 'returnLetters' && comparisonState !== 'complete') {
       // Calculate X position after the longest label
       const attackX = alignX + 280;
-      const attackCenterY = baseY + rowHeight * 1.5; // Moved down a bit
 
       // Draw pirate flag
       if (pirateFlagImage) {
@@ -524,11 +573,38 @@ function createBrowserCanvas(
         const flagY = baseY + 15; // Aligned below the text
         ctx.drawImage(pirateFlagImage, flagX, flagY, flagSize, flagSize);
 
-        // Draw "attaque homographe" text at same level as first letter (а)
-        ctx.fillStyle = '#e53935';
+        // Draw "Attaque homographe" text at same level as first letter (а)
+        // "homographe" in LGBT rainbow colors
         ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Attaque homographe', flagX + flagSize / 2, baseY);
+
+        const textCenterX = flagX + flagSize / 2;
+        const attackeText = 'Attaque ';
+        const homoText = 'homographe';
+
+        // LGBT rainbow colors
+        const rainbowColors = ['#E40303', '#FF8C00', '#FFED00', '#008026', '#24408E', '#732982'];
+
+        // Measure widths
+        const attackeWidth = ctx.measureText(attackeText).width;
+        const homoWidth = ctx.measureText(homoText).width;
+        const totalWidth = attackeWidth + homoWidth;
+
+        let currentX = textCenterX - totalWidth / 2;
+
+        // Draw "Attaque " in red
+        ctx.fillStyle = '#e53935';
+        ctx.textAlign = 'left';
+        ctx.fillText(attackeText, currentX, baseY);
+        currentX += attackeWidth;
+
+        // Draw "homographe" with each letter in rainbow colors
+        for (let i = 0; i < homoText.length; i++) {
+          ctx.fillStyle = rainbowColors[i % rainbowColors.length];
+          ctx.fillText(homoText[i], currentX, baseY);
+          currentX += ctx.measureText(homoText[i]).width;
+        }
+
         ctx.textAlign = 'left';
       }
     }
@@ -537,10 +613,143 @@ function createBrowserCanvas(
   return canvasEl;
 }
 
+// Table data for the back page
+const tableData = [
+  { domain: 'café.fr', punycode: 'xn--caf-dma.fr', browser: 'café.fr' },
+  { domain: 'аррӏе.com', punycode: 'xn--80ak6aa92e.com', browser: 'xn--80ak6aa92e.com' },
+  { domain: 'paypal.com', punycode: 'paypal.com', browser: 'paypal.com' },
+  { domain: 'раураl.com', punycode: 'xn--l-7sba6dbr.com', browser: 'xn--l-7sba6dbr.com' },
+];
+
+// Create back page canvas with table
+function createBackCanvas(canvasHeight: number = 1080): HTMLCanvasElement {
+  const canvasEl = document.createElement('canvas');
+  const ctx = canvasEl.getContext('2d')!;
+  canvasEl.width = 1920;
+  canvasEl.height = canvasHeight;
+
+  // Mirror horizontally so it displays correctly after 180° rotation
+  ctx.translate(canvasEl.width, 0);
+  ctx.scale(-1, 1);
+
+  // Gray background
+  ctx.fillStyle = '#4a4a4a';
+  ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+  // Title
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 48px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Encodage Punycode des noms de domaine', canvasEl.width / 2, 100);
+
+  // Table settings
+  const tableX = 100;
+  const tableY = 180;
+  const tableWidth = canvasEl.width - 200;
+  const rowHeight = 70;
+  const colWidths = [tableWidth * 0.33, tableWidth * 0.34, tableWidth * 0.33];
+  const headers = ['Domaine (Unicode)', 'Encodé DNS (Punycode réel)', 'Affichage navigateur'];
+
+  // Draw table header
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(tableX, tableY, tableWidth, rowHeight);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  ctx.textAlign = 'center';
+
+  let colX = tableX;
+  for (let i = 0; i < headers.length; i++) {
+    ctx.fillText(headers[i], colX + colWidths[i] / 2, tableY + rowHeight / 2 + 8);
+    colX += colWidths[i];
+  }
+
+  // Draw table rows
+  ctx.font = '22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+
+  for (let rowIdx = 0; rowIdx < tableData.length; rowIdx++) {
+    const row = tableData[rowIdx];
+    const rowY = tableY + rowHeight * (rowIdx + 1);
+
+    // Alternate row colors
+    ctx.fillStyle = rowIdx % 2 === 0 ? '#5a5a5a' : '#4a4a4a';
+    ctx.fillRect(tableX, rowY, tableWidth, rowHeight);
+
+    // Draw cell borders
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tableX, rowY, tableWidth, rowHeight);
+
+    // Draw cell content
+    colX = tableX;
+
+    // Check if this is a homograph attack risk (Cyrillic characters that look like Latin)
+    const isHomographRisk = row.domain === 'аррӏе.com' || row.domain === 'раураl.com';
+
+    // Domain column - red for homograph risks
+    if (isHomographRisk) {
+      ctx.fillStyle = '#e57373'; // Red - dangerous homograph
+    } else {
+      ctx.fillStyle = '#ffffff'; // White - normal
+    }
+    ctx.fillText(row.domain, colX + colWidths[0] / 2, rowY + rowHeight / 2 + 8);
+    colX += colWidths[0];
+
+    // Punycode column
+    ctx.fillStyle = '#90caf9'; // Light blue for punycode
+    ctx.fillText(row.punycode, colX + colWidths[1] / 2, rowY + rowHeight / 2 + 8);
+    colX += colWidths[1];
+
+    // Browser display column - green if browser shows punycode (protection active)
+    if (row.browser.startsWith('xn--')) {
+      ctx.fillStyle = '#81c784'; // Green - safe (browser shows punycode)
+    } else {
+      ctx.fillStyle = '#ffffff'; // White - normal
+    }
+    ctx.fillText(row.browser, colX + colWidths[2] / 2, rowY + rowHeight / 2 + 8);
+  }
+
+  // Draw table border
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(tableX, tableY, tableWidth, rowHeight * (tableData.length + 1));
+
+  // Draw vertical column separators
+  colX = tableX;
+  for (let i = 0; i < colWidths.length - 1; i++) {
+    colX += colWidths[i];
+    ctx.beginPath();
+    ctx.moveTo(colX, tableY);
+    ctx.lineTo(colX, tableY + rowHeight * (tableData.length + 1));
+    ctx.stroke();
+  }
+
+  // Legend at bottom
+  ctx.font = '20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+  ctx.textAlign = 'left';
+  const legendY = tableY + rowHeight * (tableData.length + 1) + 50;
+
+  ctx.fillStyle = '#81c784';
+  ctx.fillRect(tableX, legendY - 15, 20, 20);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('Le navigateur affiche le Punycode (protection active)', tableX + 30, legendY);
+
+  ctx.fillStyle = '#e57373';
+  ctx.fillRect(tableX + 550, legendY - 15, 20, 20);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('Risque d\'attaque homographe', tableX + 580, legendY);
+
+  ctx.textAlign = 'left';
+
+  return canvasEl;
+}
+
 // Create browser mesh
 let browserTexture: DynamicTexture;
+let backTexture: DynamicTexture;
 let browserMaterial: StandardMaterial;
 let browserMesh: Mesh;
+let isShowingBack = false;
 
 function createBrowserMesh(): void {
   // Create dynamic texture from canvas
@@ -549,6 +758,13 @@ function createBrowserMesh(): void {
   const sourceCanvas = createBrowserCanvas(currentDisplayedUrl);
   textureContext.drawImage(sourceCanvas, 0, 0);
   browserTexture.update();
+
+  // Create back texture for the table
+  backTexture = new DynamicTexture('backTexture', { width: 1920, height: 1080 }, scene, true);
+  const backContext = backTexture.getContext();
+  const backCanvas = createBackCanvas(1080);
+  backContext.drawImage(backCanvas, 0, 0);
+  backTexture.update();
 
   // Create material
   browserMaterial = new StandardMaterial('browserMaterial', scene);
@@ -564,6 +780,22 @@ function createBrowserMesh(): void {
   }, scene);
   browserMesh.material = browserMaterial;
   browserMesh.scaling.x = -1; // Flip horizontally
+}
+
+// Switch to back texture
+function showBackTexture(): void {
+  if (!isShowingBack) {
+    browserMaterial.emissiveTexture = backTexture;
+    isShowingBack = true;
+  }
+}
+
+// Switch to front texture
+function showFrontTexture(): void {
+  if (isShowingBack) {
+    browserMaterial.emissiveTexture = browserTexture;
+    isShowingBack = false;
+  }
 }
 
 let currentTextureHeight = 1080;
@@ -611,6 +843,11 @@ const typing2Duration = 2500;
 const comparisonDuration = 1000;
 const returnLettersDuration = 1000;
 const dezoomDuration = 2000;
+const flipDuration = 1500;
+const erase3Duration = 800;
+const typing3Duration = 2000;
+const erase4Duration = 800;
+const typing4Duration = 3000;
 
 // Camera target position when zoomed (to show address bar)
 const zoomedCameraX = 2.5; // Positive to move camera right (shows left side of browser)
@@ -835,6 +1072,155 @@ scene.registerBeforeRender(() => {
       stepAnimationComplete = true;
     }
   }
+
+  if (step === 'flip') {
+    const progress = Math.min(elapsed / flipDuration, 1);
+    const easedProgress = easeInOutCubic(progress);
+
+    // Rotate around Y axis (180 degrees = PI radians)
+    const rotation = easedProgress * Math.PI;
+    browserMesh.rotation.y = rotation;
+
+    // Switch texture at halfway point (90 degrees)
+    if (rotation > Math.PI / 2) {
+      showBackTexture();
+    } else {
+      showFrontTexture();
+    }
+
+    // Keep camera at initial position
+    updateBrowserTransform(0);
+
+    if (progress >= 1) {
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'flipBack') {
+    const progress = Math.min(elapsed / flipDuration, 1);
+    const easedProgress = easeInOutCubic(progress);
+
+    // Rotate back from PI to 0 (reverse direction)
+    const rotation = Math.PI - easedProgress * Math.PI;
+    browserMesh.rotation.y = rotation;
+
+    // Switch texture at halfway point (90 degrees)
+    if (rotation < Math.PI / 2) {
+      showFrontTexture();
+    } else {
+      showBackTexture();
+    }
+
+    // Keep camera at initial position
+    updateBrowserTransform(0);
+
+    if (progress >= 1) {
+      browserMesh.rotation.y = 0; // Ensure exact 0
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'zoomFinal') {
+    const progress = Math.min(elapsed / zoomDuration, 1);
+    zoomProgress = easeInOutCubic(progress);
+
+    // Move camera to focus on address bar
+    updateBrowserTransform(zoomProgress);
+
+    if (progress >= 1) stepAnimationComplete = true;
+  }
+
+  if (step === 'erasing3') {
+    const progress = Math.min(elapsed / erase3Duration, 1);
+    erase3Progress = progress;
+    const charsToShow = Math.floor((1 - erase3Progress) * secondUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = secondUrl.substring(0, charsToShow);
+      updateBrowserTexture();
+    }
+
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
+
+    if (progress >= 1) {
+      currentDisplayedUrl = '';
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'typing3') {
+    const progress = Math.min(elapsed / typing3Duration, 1);
+    typing3Progress = progress;
+    const charsToShow = Math.floor(typing3Progress * thirdUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = thirdUrl.substring(0, charsToShow);
+      updateBrowserTexture();
+    }
+
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
+
+    if (progress >= 1) {
+      currentDisplayedUrl = thirdUrl;
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'erasing4') {
+    const progress = Math.min(elapsed / erase4Duration, 1);
+    erase4Progress = progress;
+    const charsToShow = Math.floor((1 - erase4Progress) * thirdUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = thirdUrl.substring(0, charsToShow);
+      updateBrowserTexture();
+    }
+
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
+
+    if (progress >= 1) {
+      currentDisplayedUrl = '';
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'typing4') {
+    const progress = Math.min(elapsed / typing4Duration, 1);
+    typing4Progress = progress;
+    const charsToShow = Math.floor(typing4Progress * fourthUrl.length);
+
+    if (currentDisplayedUrl.length !== charsToShow) {
+      currentDisplayedUrl = fourthUrl.substring(0, charsToShow);
+      updateBrowserTexture();
+    }
+
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
+
+    if (progress >= 1) {
+      currentDisplayedUrl = fourthUrl;
+      updateBrowserTexture();
+      stepAnimationComplete = true;
+    }
+  }
+
+  if (step === 'dezoomFinal') {
+    const progress = Math.min(elapsed / dezoomDuration, 1);
+    const easedProgress = easeInOutCubic(progress);
+
+    // Move camera back to initial position
+    updateBrowserTransform(1 - easedProgress);
+
+    if (progress >= 1) {
+      stepAnimationComplete = true;
+    }
+  }
 });
 
 // Handle window resize
@@ -849,12 +1235,6 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'Space') {
     event.preventDefault();
     nextStep();
-
-    // Hide info on first press
-    const infoElement = document.getElementById('info');
-    if (infoElement) {
-      infoElement.style.opacity = '0';
-    }
   }
 });
 
