@@ -54,8 +54,8 @@ camera.setTarget(Vector3.Zero());
 camera.fov = (60 * Math.PI) / 180; // 60 degrees in radians
 
 // Animation steps (triggered by Space key)
-type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'returnLetters' | 'dezoom' | 'done';
-const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'returnLetters', 'dezoom', 'done'];
+type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'showAttack' | 'returnLetters' | 'dezoom' | 'done';
+const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'showAttack', 'returnLetters', 'dezoom', 'done'];
 let currentStepIndex = 0;
 let stepStartTime = 0;
 let stepAnimationComplete = false;
@@ -139,7 +139,8 @@ function createBrowserCanvas(
   animProgress: number = 0,
   comparisonState: ComparisonState = 'none',
   reverseProgress: number = 0,
-  canvasHeight: number = 1080
+  canvasHeight: number = 1080,
+  showAttack: boolean = false
 ): HTMLCanvasElement {
   const canvasEl = document.createElement('canvas');
   const ctx = canvasEl.getContext('2d')!;
@@ -202,21 +203,14 @@ function createBrowserCanvas(
   ctx.closePath();
   ctx.fill();
 
-  // Chrome icon in tab (aligned with traffic lights)
-  const chromeIconX = tabStartX + 16;
-  const chromeIconY = trafficLightY;
-  ctx.fillStyle = '#4285f4';
-  ctx.beginPath();
-  ctx.arc(chromeIconX, chromeIconY, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#ea4335';
-  ctx.beginPath();
-  ctx.arc(chromeIconX, chromeIconY, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#fbbc05';
-  ctx.beginPath();
-  ctx.arc(chromeIconX, chromeIconY, 3, 0, Math.PI * 2);
-  ctx.fill();
+  // Chrome logo in tab (from SVG)
+  const chromeIconSize = 16;
+  const chromeIconX = tabStartX + 16 - chromeIconSize / 2;
+  const chromeIconY = trafficLightY - chromeIconSize / 2;
+
+  if (chromeLogoImage) {
+    ctx.drawImage(chromeLogoImage, chromeIconX, chromeIconY, chromeIconSize, chromeIconSize);
+  }
 
   // Tab title
   ctx.fillStyle = textColor;
@@ -477,14 +471,14 @@ function createBrowserCanvas(
       if (comparisonState !== 'complete') {
         // Transition font size and color when returning
         if (comparisonState === 'returnLetters') {
-          const fontSize = 28 - (28 - 26) * reverseProgress;
+          const fontSize = 28 - (28 - 16) * reverseProgress; // Shrink from 28px to normal URL size (16px)
           const fontWeight = reverseProgress > 0.5 ? 'normal' : 'bold';
           ctx.font = `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`;
 
-          // Fade red to black as it returns
-          const redValue = Math.floor(229 - (229 - 32) * reverseProgress);
-          const greenValue = Math.floor(57 - (57 - 33) * reverseProgress);
-          const blueValue = Math.floor(53 - (53 - 36) * reverseProgress);
+          // Fade red to URL text color (#e8eaed = rgb(232, 234, 237)) as it returns
+          const redValue = Math.floor(229 + (232 - 229) * reverseProgress);
+          const greenValue = Math.floor(57 + (234 - 57) * reverseProgress);
+          const blueValue = Math.floor(53 + (237 - 53) * reverseProgress);
           ctx.fillStyle = `rgb(${redValue}, ${greenValue}, ${blueValue})`;
         } else {
           ctx.fillStyle = '#e53935'; // Red for Cyrillic
@@ -499,8 +493,8 @@ function createBrowserCanvas(
         const arrowLength = 25;
         const labelX = arrowStartX + arrowLength + 8;
 
-        // Draw arrow pointing right
-        ctx.strokeStyle = '#e53935';
+        // Draw arrow pointing right (black)
+        ctx.strokeStyle = '#000000';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(arrowStartX, targetY - 8);
@@ -510,10 +504,32 @@ function createBrowserCanvas(
         ctx.lineTo(arrowStartX + arrowLength - 5, targetY - 3);
         ctx.stroke();
 
-        // Draw label
-        ctx.fillStyle = '#e53935';
+        // Draw label (black)
+        ctx.fillStyle = '#000000';
         ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
         ctx.fillText(`${group.label} cyrillique (${group.code})`, labelX, targetY - 4);
+      }
+    }
+
+    // Draw pirate flag and "attaque homographe" text when showAttack is true
+    if (showAttack && animProgress >= 1 && comparisonState !== 'returnLetters' && comparisonState !== 'complete') {
+      // Calculate X position after the longest label
+      const attackX = alignX + 280;
+      const attackCenterY = baseY + rowHeight * 1.5; // Moved down a bit
+
+      // Draw pirate flag
+      if (pirateFlagImage) {
+        const flagSize = 80;
+        const flagX = attackX + 50;
+        const flagY = baseY + 15; // Aligned below the text
+        ctx.drawImage(pirateFlagImage, flagX, flagY, flagSize, flagSize);
+
+        // Draw "attaque homographe" text at same level as first letter (а)
+        ctx.fillStyle = '#e53935';
+        ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Attaque homographe', flagX + flagSize / 2, baseY);
+        ctx.textAlign = 'left';
       }
     }
   }
@@ -556,7 +572,8 @@ function updateBrowserTexture(
   showComparison: boolean = false,
   animProgress: number = 0,
   comparisonState: ComparisonState = 'none',
-  reverseProgress: number = 0
+  reverseProgress: number = 0,
+  showAttack: boolean = false
 ): void {
   const targetHeight = getCanvasHeight();
 
@@ -569,7 +586,7 @@ function updateBrowserTexture(
   }
 
   const textureContext = browserTexture.getContext();
-  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress, comparisonState, reverseProgress, targetHeight);
+  const sourceCanvas = createBrowserCanvas(currentDisplayedUrl, showComparison, animProgress, comparisonState, reverseProgress, targetHeight, showAttack);
   textureContext.drawImage(sourceCanvas, 0, 0);
   browserTexture.update();
 }
@@ -773,7 +790,7 @@ scene.registerBeforeRender(() => {
     const progress = Math.min(elapsed / comparisonDuration, 1);
     comparisonProgress = progress;
     comparisonAnimProgress = easeOutCubic(progress);
-    updateBrowserTexture(true, comparisonAnimProgress, progress >= 1 ? 'full' : 'animating', 0);
+    updateBrowserTexture(true, comparisonAnimProgress, progress >= 1 ? 'full' : 'animating', 0, false);
 
     // Keep camera at zoomed position
     updateBrowserTransform(1);
@@ -781,10 +798,21 @@ scene.registerBeforeRender(() => {
     if (progress >= 1) stepAnimationComplete = true;
   }
 
+  if (step === 'showAttack') {
+    // Show comparison with pirate flag and "attaque homographe" text
+    updateBrowserTexture(true, 1, 'full', 0, true);
+
+    // Keep camera at zoomed position
+    updateBrowserTransform(1);
+
+    // This step just waits for next Space press
+    stepAnimationComplete = true;
+  }
+
   if (step === 'returnLetters') {
     const progress = Math.min(elapsed / returnLettersDuration, 1);
     returnLettersProgress = easeInOutCubic(progress);
-    updateBrowserTexture(true, 1, 'returnLetters', returnLettersProgress);
+    updateBrowserTexture(true, 1, 'returnLetters', returnLettersProgress, false);
 
     // Keep camera at zoomed position
     updateBrowserTransform(1);
@@ -830,10 +858,38 @@ window.addEventListener('keydown', (event) => {
   }
 });
 
-// Initialize
-createBrowserMesh();
+// Load Chrome logo SVG
+let chromeLogoImage: HTMLImageElement | null = null;
+// Load pirate flag image
+let pirateFlagImage: HTMLImageElement | null = null;
 
-// Run the render loop
-engine.runRenderLoop(() => {
-  scene.render();
-});
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// Initialize
+async function init() {
+  try {
+    chromeLogoImage = await loadImage('assets/chrome-logo-8797.svg');
+  } catch (e) {
+    console.warn('Could not load Chrome logo SVG:', e);
+  }
+  try {
+    pirateFlagImage = await loadImage('assets/pirate-flag-edward.png');
+  } catch (e) {
+    console.warn('Could not load pirate flag image:', e);
+  }
+  createBrowserMesh();
+
+  // Run the render loop
+  engine.runRenderLoop(() => {
+    scene.render();
+  });
+}
+
+init();
