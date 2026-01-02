@@ -89,8 +89,8 @@ camera.setTarget(Vector3.Zero());
 camera.fov = (60 * Math.PI) / 180; // 60 degrees in radians
 
 // Animation steps (triggered by Space key)
-type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'showAttack' | 'returnLetters' | 'dezoom' | 'flip' | 'flipBack' | 'zoomFinal' | 'erasing3' | 'typing3' | 'erasing4' | 'typing4' | 'dezoomFinal' | 'done';
-const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'showAttack', 'returnLetters', 'dezoom', 'flip', 'flipBack', 'zoomFinal', 'erasing3', 'typing3', 'erasing4', 'typing4', 'dezoomFinal', 'done'];
+type AnimationStep = 'idle' | 'fullscreen' | 'zoom' | 'typing1' | 'erasing1' | 'typingEmoji' | 'erasingEmoji' | 'typing2' | 'comparison' | 'showAttack' | 'returnLetters' | 'dezoom' | 'flip' | 'flipBack' | 'zoomFinal' | 'typing3' | 'erasing4' | 'typing4' | 'dezoomFinal' | 'done';
+const animationSteps: AnimationStep[] = ['idle', 'fullscreen', 'zoom', 'typing1', 'erasing1', 'typingEmoji', 'erasingEmoji', 'typing2', 'comparison', 'showAttack', 'returnLetters', 'dezoom', 'flip', 'flipBack', 'zoomFinal', 'typing3', 'erasing4', 'typing4', 'dezoomFinal', 'done'];
 let currentStepIndex = 0;
 let stepStartTime = 0;
 let stepAnimationComplete = false;
@@ -103,10 +103,8 @@ let eraseProgress = 0;
 let emojiTypingProgress = 0;
 let emojiEraseProgress = 0;
 let typing2Progress = 0;
-let comparisonProgress = 0;
 let comparisonAnimProgress = 0;
 let returnLettersProgress = 0;
-let erase3Progress = 0;
 let typing3Progress = 0;
 let erase4Progress = 0;
 let typing4Progress = 0;
@@ -114,7 +112,7 @@ let typing4Progress = 0;
 // First URL: Chinese characters
 const firstUrl = '例子.测试';
 // Second URL: Emoji in domain
-const emojiUrl = '💪.com';
+const emojiUrl = '😎🌴☀️🍹🌈✌️.com';
 // Third URL: Cyrillic homograph (а, р, р, ӏ, е are Cyrillic, looks like "apple")
 const secondUrl = 'аррӏе.com';
 // Fourth URL: GitHub repo
@@ -130,7 +128,6 @@ const cyrillicLettersGrouped = [
 ];
 
 let currentDisplayedUrl = '';
-let currentPhase: 'typing1' | 'pause1' | 'erasing' | 'typing2' | 'pause2' | 'comparison' | 'done' = 'typing1';
 
 // Helper to get current step
 function getCurrentStep(): AnimationStep {
@@ -148,10 +145,8 @@ function nextStep(): void {
     const step = getCurrentStep();
     if (step === 'typing1') {
       currentDisplayedUrl = '';
-      currentPhase = 'typing1';
       typingProgress = 0;
     } else if (step === 'erasing1') {
-      currentPhase = 'erasing';
       eraseProgress = 0;
     } else if (step === 'typingEmoji') {
       currentDisplayedUrl = '';
@@ -160,11 +155,8 @@ function nextStep(): void {
       emojiEraseProgress = 0;
     } else if (step === 'typing2') {
       currentDisplayedUrl = '';
-      currentPhase = 'typing2';
       typing2Progress = 0;
     } else if (step === 'comparison') {
-      currentPhase = 'comparison';
-      comparisonProgress = 0;
       comparisonAnimProgress = 0;
     }
 
@@ -388,12 +380,21 @@ function createBrowserCanvas(
     ctx.fillText(urlText, textX, textY);
   }
 
-  // Blinking cursor (if typing or erasing)
+  // Cursor (solid when typing/erasing, blinking when typing is done)
   const step = getCurrentStep();
-  if (step !== 'idle' && (step === 'typing1' || step === 'typing2' || step === 'typingEmoji' || step === 'erasing1' || step === 'erasingEmoji')) {
+  const typingSteps = ['typing1', 'typing2', 'typingEmoji', 'typing3', 'typing4'];
+  const erasingSteps = ['erasing1', 'erasingEmoji', 'erasing3', 'erasing4'];
+  const isTyping = typingSteps.includes(step);
+  const isErasing = erasingSteps.includes(step);
+
+  if (step !== 'idle' && (isTyping || isErasing)) {
     const textWidth = ctx.measureText(urlText).width;
-    ctx.fillStyle = textColor;
-    ctx.fillRect(textX + textWidth + 2, urlBarY + 8, 2, 20);
+    // Blink cursor when typing is complete (500ms on, 500ms off)
+    const shouldShowCursor = isErasing || !stepAnimationComplete || (Math.floor(Date.now() / 500) % 2 === 0);
+    if (shouldShowCursor) {
+      ctx.fillStyle = textColor;
+      ctx.fillRect(textX + textWidth + 2, urlBarY + 8, 2, 20);
+    }
   }
 
   // Right side icons
@@ -615,10 +616,9 @@ function createBrowserCanvas(
 
 // Table data for the back page
 const tableData = [
-  { domain: 'café.fr', punycode: 'xn--caf-dma.fr', browser: 'café.fr' },
   { domain: 'аррӏе.com', punycode: 'xn--80ak6aa92e.com', browser: 'xn--80ak6aa92e.com' },
-  { domain: 'paypal.com', punycode: 'paypal.com', browser: 'paypal.com' },
-  { domain: 'раураl.com', punycode: 'xn--l-7sba6dbr.com', browser: 'xn--l-7sba6dbr.com' },
+  { domain: 'apple.com', punycode: 'apple.com', browser: 'apple.com' },
+  { domain: 'café.fr', punycode: 'xn--caf-dma.fr', browser: 'café.fr' },
 ];
 
 // Create back page canvas with table
@@ -836,17 +836,16 @@ function easeInOutCubic(t: number): number {
 const fullscreenDuration = 800;
 const zoomDuration = 2500;
 const typing1Duration = 2500;
-const eraseDuration = 800;
-const emojiTypingDuration = 1500;
-const emojiEraseDuration = 800;
+const eraseDuration = 200;
+const emojiTypingDuration = 2000;
+const emojiEraseDuration = 300;
 const typing2Duration = 2500;
 const comparisonDuration = 1000;
 const returnLettersDuration = 1000;
 const dezoomDuration = 2000;
 const flipDuration = 1500;
-const erase3Duration = 800;
 const typing3Duration = 2000;
-const erase4Duration = 800;
+const erase4Duration = 200;
 const typing4Duration = 3000;
 
 // Camera target position when zoomed (to show address bar)
@@ -1016,16 +1015,13 @@ scene.registerBeforeRender(() => {
 
     if (progress >= 1) {
       currentDisplayedUrl = secondUrl;
-      currentPhase = 'pause2';
       updateBrowserTexture();
       stepAnimationComplete = true;
     }
   }
 
   if (step === 'comparison') {
-    currentPhase = 'comparison';
     const progress = Math.min(elapsed / comparisonDuration, 1);
-    comparisonProgress = progress;
     comparisonAnimProgress = easeOutCubic(progress);
     updateBrowserTexture(true, comparisonAnimProgress, progress >= 1 ? 'full' : 'animating', 0, false);
 
@@ -1068,7 +1064,6 @@ scene.registerBeforeRender(() => {
     updateBrowserTexture(false, 0, 'complete', 1);
 
     if (progress >= 1) {
-      currentPhase = 'done';
       stepAnimationComplete = true;
     }
   }
@@ -1116,6 +1111,9 @@ scene.registerBeforeRender(() => {
 
     if (progress >= 1) {
       browserMesh.rotation.y = 0; // Ensure exact 0
+      // Clear URL when returning from table
+      currentDisplayedUrl = '';
+      updateBrowserTexture();
       stepAnimationComplete = true;
     }
   }
@@ -1128,26 +1126,6 @@ scene.registerBeforeRender(() => {
     updateBrowserTransform(zoomProgress);
 
     if (progress >= 1) stepAnimationComplete = true;
-  }
-
-  if (step === 'erasing3') {
-    const progress = Math.min(elapsed / erase3Duration, 1);
-    erase3Progress = progress;
-    const charsToShow = Math.floor((1 - erase3Progress) * secondUrl.length);
-
-    if (currentDisplayedUrl.length !== charsToShow) {
-      currentDisplayedUrl = secondUrl.substring(0, charsToShow);
-      updateBrowserTexture();
-    }
-
-    // Keep camera at zoomed position
-    updateBrowserTransform(1);
-
-    if (progress >= 1) {
-      currentDisplayedUrl = '';
-      updateBrowserTexture();
-      stepAnimationComplete = true;
-    }
   }
 
   if (step === 'typing3') {
@@ -1220,6 +1198,12 @@ scene.registerBeforeRender(() => {
     if (progress >= 1) {
       stepAnimationComplete = true;
     }
+  }
+
+  // Continuously update texture for cursor blinking when typing is done
+  const typingSteps = ['typing1', 'typing2', 'typingEmoji', 'typing3', 'typing4'];
+  if (typingSteps.includes(step) && stepAnimationComplete) {
+    updateBrowserTexture();
   }
 });
 
