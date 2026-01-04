@@ -870,12 +870,22 @@ function getCanvasHeight(): number {
 
 // Update browser mesh scale and camera position
 function updateBrowserTransform(zoomProgress: number = 0, meshScale: number = 1.0): void {
-  const baseScale = calculateBrowserScale();
-  const canvasHeight = getCanvasHeight();
+  const visible = getVisibleArea();
 
-  // Mesh scale (for idle/fullscreen transition)
-  browserMesh.scaling.x = -baseScale * meshScale; // Negative for horizontal flip
-  browserMesh.scaling.y = baseScale * meshScale * (canvasHeight / 1080);
+  // Calculate scale needed to fit browser in visible area
+  const scaleToFitWidth = visible.width / browserBaseWidth;
+  const scaleToFitHeight = visible.height / browserBaseHeight;
+
+  // Always use the smaller scale to ensure the browser fits completely
+  const fitScale = Math.min(scaleToFitWidth, scaleToFitHeight);
+
+  // In idle mode, apply meshScale (0.7) to make it smaller
+  // In fullscreen mode, meshScale is 1.0
+  const finalScale = fitScale * meshScale;
+
+  // Mesh scale - uniform scaling to maintain aspect ratio
+  browserMesh.scaling.x = -finalScale; // Negative for horizontal flip
+  browserMesh.scaling.y = finalScale;
   browserMesh.position.x = 0;
   browserMesh.position.y = 0;
 
