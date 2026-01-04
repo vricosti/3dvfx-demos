@@ -76,12 +76,6 @@ function getViewportAspect(): number {
   return canvas.width / canvas.height;
 }
 
-// Calculate uniform scale to fill viewport width
-function calculateBrowserScale(): number {
-  const visible = getVisibleArea();
-  // Scale to fill width completely
-  return visible.width / browserBaseWidth;
-}
 
 // Create camera - positive Z looking at origin
 const camera = new FreeCamera('camera', new Vector3(0, 0, cameraZ), scene);
@@ -872,20 +866,13 @@ function getCanvasHeight(): number {
 function updateBrowserTransform(zoomProgress: number = 0, meshScale: number = 1.0): void {
   const visible = getVisibleArea();
 
-  // Calculate scale needed to fit browser in visible area
-  const scaleToFitWidth = visible.width / browserBaseWidth;
-  const scaleToFitHeight = visible.height / browserBaseHeight;
+  // Scale independently for width and height to fill the entire visible area
+  const scaleX = (visible.width / browserBaseWidth) * meshScale;
+  const scaleY = (visible.height / browserBaseHeight) * meshScale;
 
-  // Always use the smaller scale to ensure the browser fits completely
-  const fitScale = Math.min(scaleToFitWidth, scaleToFitHeight);
-
-  // In idle mode, apply meshScale (0.7) to make it smaller
-  // In fullscreen mode, meshScale is 1.0
-  const finalScale = fitScale * meshScale;
-
-  // Mesh scale - uniform scaling to maintain aspect ratio
-  browserMesh.scaling.x = -finalScale; // Negative for horizontal flip
-  browserMesh.scaling.y = finalScale;
+  // Mesh scale - independent scaling (no aspect ratio preserved)
+  browserMesh.scaling.x = -scaleX; // Negative for horizontal flip
+  browserMesh.scaling.y = scaleY;
   browserMesh.position.x = 0;
   browserMesh.position.y = 0;
 
@@ -1218,10 +1205,17 @@ scene.registerBeforeRender(() => {
 });
 
 // Handle window resize
+let resizeTimeout: number | null = null;
 window.addEventListener('resize', () => {
-  engine.resize();
-  // Update texture for new viewport size
-  updateBrowserTexture();
+  // Debounce resize to avoid multiple rapid calls
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout);
+  }
+  resizeTimeout = window.setTimeout(() => {
+    engine.resize();
+    updateBrowserTexture();
+    resizeTimeout = null;
+  }, 100);
 });
 
 // Handle Space key to advance animation
